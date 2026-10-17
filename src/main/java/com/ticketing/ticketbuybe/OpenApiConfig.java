@@ -61,6 +61,7 @@ public class OpenApiConfig {
             Map<String,String> codes=new LinkedHashMap<>();
             codes.put("400","INVALID_REQUEST");codes.put("401","AUTHENTICATION_REQUIRED");codes.put("403",path.contains("/admin/")?"FORBIDDEN":"QUEUE_ADMISSION_REQUIRED");
             codes.put("404","NOT_FOUND");codes.put("409","SEAT_CONFLICT");codes.put("429","RATE_LIMITED");codes.put("500","INTERNAL_ERROR");
+            if(path.endsWith("/auth/signup")) codes.put("409","USERNAME_ALREADY_EXISTS");
             codes.forEach((status,code)->{
                 var media=new MediaType().schema(new Schema<>().$ref("#/components/schemas/Error"));
                 media.addExamples(code,new io.swagger.v3.oas.models.examples.Example().value(Map.of("code",code,"message","요청을 처리할 수 없습니다.","details",Map.of(),"traceId","5285cfe8-3eba-4148-94db-57780d5f689b")));
@@ -70,7 +71,8 @@ public class OpenApiConfig {
                 op.getResponses().addApiResponse(status,new ApiResponse().description(code).content(new Content().addMediaType("application/json",media)));
             });
             if(op.getRequestBody()!=null && op.getRequestBody().getContent()!=null) {
-                Object example=path.endsWith("/login")?Map.of("username","demo","password","Demo1234!"):
+                Object example=path.endsWith("/signup")?Map.of("username","ticket_user","password","Ticket1234!","name","티켓 사용자"):
+                    path.endsWith("/login")?Map.of("username","demo","password","Demo1234!"):
                     path.endsWith("/holds")?Map.of("seatIds",List.of(1,2)):
                     path.equals("/api/v1/reservations")?Map.of("holdId","replace-with-hold-id"):
                     Map.of("category","GUIDE","titles",Map.of("ko","이용 안내","en","Guide","zh-CN","指南"),"bodies",Map.of("ko","내용","en","Content","zh-CN","内容"));

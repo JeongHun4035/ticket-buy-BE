@@ -1,9 +1,11 @@
 # 구현 검증 결과
 
-`gradlew test bootJar --offline --no-daemon` 성공. Java 21, Spring Boot 4.0.8. 총 7개 테스트(통합 6 + 컨텍스트 1), 실패 0. 보고서는 `build/reports/tests/test/index.html`에 생성된다.
+`gradlew test bootJar --offline --no-daemon` 성공. Java 21, Spring Boot 4.0.8. 총 9개 테스트(통합 8 + 컨텍스트 1), 실패 0. 보고서는 `build/reports/tests/test/index.html`에 생성된다.
 
 | 검증 | 확인 결과 |
 | --- | --- |
+| 회원가입 | 공개 HTTP 가입 201, 한국어 이름/공백 정리, 비밀번호 BCrypt 저장, 입력 오류 400, 중복 409, 가입 후 로그인·내 정보 성공, USER 권한 고정 |
+| 동시 회원가입 | 같은 아이디를 동시에 생성하면 1건 성공, 1건 USERNAME_ALREADY_EXISTS, DB 사용자 1건 |
 | 동시 좌석 확보 | 서로 다른 사용자 2명이 같은 회차/좌석을 동시에 요청, 1명만 성공, 나머지 SEAT_CONFLICT |
 | 대기열 | 중복 진입은 동일 순번/토큰, 용량 초과 시 WAITING, 앞선 사용자 퇴장 시 승격 |
 | 입장 권한 | 다른 사용자·다른 회차 토큰, 만료 토큰으로 좌석 확보 불가 |
@@ -20,3 +22,5 @@
 추가로 생성 JAR `build/libs/ticket-buy-be-0.0.1-SNAPSHOT.jar`를 포트 18080과 독립 H2 메모리 DB로 기동했다. Flyway V1 마이그레이션 적용, 개발 시드 로딩, `/swagger-ui/index.html` 200, `/actuator/health` UP을 확인했다. `/v3/api-docs`를 UTF-8 `docs/openapi.json`으로 추출했고 OpenAPI 3.1.0, 29개 operation 및 정상 응답 예시를 확인했다. 검증용 서버는 종료했다. 기본 파일 DB가 이미 사용 중이어서 이를 사용하는 기존 프로세스는 변경하지 않았다.
 
 PostgreSQL/Docker 실행 도구가 없는 환경이므로 PostgreSQL 엔진에서의 실행, 부하·장애 복구, 프론트 실제 화면 연동은 검증하지 않았다. PostgreSQL 재실행 방법은 README에 있다. 프론트 소스가 없어 TypeScript 예시는 프론트 프로젝트의 Vite 환경 타입과 함께 옮겨 타입 검사·화면 연동해야 한다. 실제 PG 결제는 구현·테스트 범위에 없다.
+
+회원가입 추가 후 최종 JAR과 전체 9개 테스트를 다시 빌드·검증했다. 독립 DB/포트 18081로 최신 JAR을 기동해 `/auth/signup`의 201 성공 및 409 USERNAME_ALREADY_EXISTS 문서를 확인하고 `docs/openapi.json`을 갱신했다. 현재 API operation은 총 30개다.

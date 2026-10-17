@@ -90,6 +90,51 @@ class BookingIntegrationTests {
         return HttpClient.newHttpClient().send(b.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
     }
     JsonNode node(HttpResponse<String> r){return json.readTree(r.body());}
+    @Test void signupValidatesHashesAndAllowsLoginWithoutGrantingAdmin() throws Exception {
+        var docs=node(request("GET","/v3/api-docs",null,null,Map.of()));
+        assertTrue(docs.path("paths").path("/api/v1/auth/signup").path("post").path("responses").has("201"));
+        String username="signup_"+UUID.randomUUID().toString().replace("-","");
+        String password="Ticket1234!";
+        String body=json.writeValueAsString(Map.of("username",username,"password",password,"name","  신규 사용자  ","role","ADMIN"));
+        var created=request("POST","/api/v1/auth/signup",body,null,Map.of("Origin","http://localhost:5173"));
+        assertEquals(201,created.statusCode());assertEquals("신규 사용자",node(created).path("name").asString());
+        assertTrue(node(created).has("id"));assertFalse(node(created).has("password"));assertFalse(node(created).has("accessToken"));
+        assertTrue(created.headers().firstValue("set-cookie").isEmpty());
+        var stored=db.queryForMap("select * from app_user where username=?",username);
+        assertEquals("USER",stored.get("role"));assertNotEquals(password,stored.get("password_hash"));
+        assertTrue(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().matches(password,stored.get("password_hash").toString()));
+        var duplicate=request("POST","/api/v1/auth/signup",body,null,Map.of());
+        assertEquals(409,duplicate.statusCode());assertEquals("USERNAME_ALREADY_EXISTS",node(duplicate).path("code").asString());assertTrue(node(duplicate).has("traceId"));
+        var loggedIn=request("POST","/api/v1/auth/login",json.writeValueAsString(Map.of("username",username,"password",password)),null,Map.of());
+        assertEquals(200,loggedIn.statusCode());String token=node(loggedIn).path("accessToken").asString();
+        assertEquals(node(created).path("id"),node(request("GET","/api/v1/users/me",null,token,Map.of())).path("id"));
+        assertEquals(403,request("POST","/api/v1/admin/posts","{}",token,Map.of()).statusCode());
+        var invalidBodies=List.of(
+            Map.of("username","abc","password",password,"name","사용자"),
+            Map.of("username","bad username","password",password,"name","사용자"),
+            Map.of("username",username,"password","short1","name","사용자"),
+            Map.of("username",username,"password","onlyletters","name","사용자"),
+            Map.of("username",username,"password","가나다라마바사123","name","사용자"),
+            Map.of("username",username,"password","a1"+"x".repeat(71),"name","사용자"),
+            Map.of("username",username,"password",password,"name","   "),
+            Map.of("username",username,"password",password,"name","x".repeat(101)),
+            Map.of("username",username,"name","사용자"));
+        for(var invalid:invalidBodies) {
+            var result=request("POST","/api/v1/auth/signup",json.writeValueAsString(invalid),null,Map.of());
+            assertEquals(400,result.statusCode());assertEquals("INVALID_REQUEST",node(result).path("code").asString());
+        }
+    }
+    @Test void concurrentSignupCreatesOnlyOneAccount() throws Exception {
+        String username="race_"+UUID.randomUUID().toString().replace("-","");
+        var req=new SignUp(username,"Ticket1234!","동시 가입");var start=new CountDownLatch(1);
+        try(var pool=Executors.newFixedThreadPool(2)) {
+            Callable<String> call=()->{start.await();try {auth.signUp(req);return "OK";}catch(ApiError e){return e.code;}};
+            var a=pool.submit(call);var b=pool.submit(call);start.countDown();
+            var results=List.of(a.get(15,TimeUnit.SECONDS),b.get(15,TimeUnit.SECONDS));
+            assertEquals(1,Collections.frequency(results,"OK"));assertEquals(1,Collections.frequency(results,"USERNAME_ALREADY_EXISTS"));
+        }
+        assertEquals(1L,db.queryForObject("select count(*) from app_user where username=?",Long.class,username));
+    }
     @Test void httpSwaggerAuthenticationRefreshCorsAndBookingFlow() throws Exception {
         var docs=request("GET","/v3/api-docs",null,null,Map.of());assertEquals(200,docs.statusCode());assertTrue(node(docs).path("paths").has("/api/v1/reservations"));
         assertEquals(200,request("GET","/swagger-ui/index.html",null,null,Map.of()).statusCode());

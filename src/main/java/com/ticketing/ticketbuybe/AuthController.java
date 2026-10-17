@@ -18,6 +18,12 @@ public class AuthController {
     String cookie(String value,int seconds) {
         return ResponseCookie.from("refresh_token",value).httpOnly(true).secure(secure).sameSite("Strict").path("/api/v1/auth").maxAge(seconds).build().toString();
     }
+    @PostMapping("/auth/signup")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary="회원가입",description="공개 API. username/password/name으로 일반 사용자(USER)를 생성합니다. 아이디는 대소문자를 구분하며 중복이면 409 USERNAME_ALREADY_EXISTS입니다. 비밀번호는 BCrypt로 저장합니다. 자동 로그인하지 않으므로 가입 후 /auth/login을 호출하세요. 인증 API 요청 제한과 Origin 정책이 적용됩니다.")
+    public ResponseEntity<User> signUp(@Valid @RequestBody SignUp req) {
+        return ResponseEntity.status(HttpStatus.CREATED).header(HttpHeaders.CACHE_CONTROL,"no-store").body(auth.signUp(req));
+    }
     @PostMapping("/auth/login")
     @Operation(summary="로그인",description="공개 API. 아이디/비밀번호로 15분 Bearer access token과 7일 HttpOnly refresh 쿠키를 발급합니다.")
     public ResponseEntity<Auth> login(@Valid @RequestBody Login req) {

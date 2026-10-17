@@ -4,6 +4,20 @@ Base URL `/api/v1`. JSON UTF-8. 시각은 ISO 8601 UTC(Z), 프론트 표시는 `
 
 ## 인증 및 헤더
 
+### 회원가입
+
+`POST /api/v1/auth/signup`은 인증 없이 호출한다. 가입 후 별도 로그인하며 토큰/쿠키를 발급하지 않는다.
+
+```json
+{"username":"ticket_user","password":"Ticket1234!","name":"티켓 사용자"}
+```
+
+성공 201 응답은 `{"id":"4","name":"티켓 사용자"}`이다. username은 영문·숫자·밑줄 4~80자, 대소문자를 구분하고 공백을 허용하지 않는다. password는 영문과 숫자를 모두 포함한 공백 없는 ASCII 8~72자이며 특수문자 사용이 가능하다. BCrypt의 72바이트 한도를 넘는 입력은 거부한다. name은 공백만 입력할 수 없고 제어문자 없이 최대 100자이며 저장 시 앞뒤 공백을 제거한다. 사용자 권한은 서버가 항상 USER로 지정한다.
+
+입력 오류는 400 INVALID_REQUEST, 중복 아이디는 409 USERNAME_ALREADY_EXISTS이다. 동시 가입도 DB UNIQUE 제약으로 한 건만 생성된다. 기존 인증 API와 동일한 Origin/CORS 및 요청 제한(30회/분)을 적용한다. 이메일/휴대폰 인증은 제공하지 않는다. 기존 app_user 스키마를 사용하므로 추가 마이그레이션은 필요 없다.
+
+### 로그인·세션
+
 ```http
 POST /api/v1/auth/login
 Content-Type: application/json
@@ -149,6 +163,7 @@ traceId는 X-Trace-Id 응답 헤더에도 있다. 클라이언트 분기는 mess
 | 409 | HOLD_EXPIRED / HOLD_NOT_ACTIVE | 좌석 다시 확보 |
 | 409 | BOOKING_NOT_OPEN / BOOKING_CLOSED | 판매 기간 확인 |
 | 409 | IDEMPOTENCY_CONFLICT | 새 동작에 새 키 사용 |
+| 409 | USERNAME_ALREADY_EXISTS | 다른 아이디로 가입 |
 | 409 | CANCELLATION_CLOSED | 공연 시작 후 취소 불가 |
 | 409 | CONCURRENT_REQUEST | 잠시 후 안전한 재시도 |
 | 429 | RATE_LIMITED | Retry-After(초)만큼 대기 |

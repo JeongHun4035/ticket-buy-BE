@@ -1,6 +1,6 @@
 # TICKET BUY Backend
 
-기존 Java 21 / Spring Boot 4 / Gradle 프로젝트를 확장했다. 인증, 행사·회차, PostgreSQL 기반 대기열, 좌석 확보, 결제 없는 예매 확정, 고객센터·FAQ·게시판과 관리자 CRUD를 제공한다.
+기존 Java 21 / Spring Boot 4 / Gradle 프로젝트를 확장했다. 회원가입·인증, 행사·회차, PostgreSQL 기반 대기열, 좌석 확보, 결제 없는 예매 확정, 고객센터·FAQ·게시판과 관리자 CRUD를 제공한다.
 
 ## 로컬 실행
 
@@ -83,6 +83,6 @@ $env:TEST_DB_PASSWORD='replace-with-test-password'
 - [데이터 모델·인증·대기열·잠금·결제 정책](docs/architecture.md)
 - [실행·검증 결과와 제한](docs/verification.md)
 
-요청한 API 경로, 마이그레이션, 개발 시드, Swagger, 동시성/권한 검증을 구현했다. 프론트 소스는 이 저장소에 없어 실제 프론트 수정은 포함하지 않고 매핑과 호출 예시를 제공한다. PG/가상 결제, 회원가입·계정 복구, 행사·공연장 운영 CRUD, 이미지 업로드, 대규모 검색 최적화·부하 검증·분산 요청 제한은 미구현이다. 현재 예매 확정은 **결제 없는 CONFIRMED / NOT_REQUIRED**이며 실제 결제를 뜻하지 않는다.
+요청한 API 경로, 회원가입, 마이그레이션, 개발 시드, Swagger, 동시성/권한 검증을 구현했다. 회원가입은 `POST /api/v1/auth/signup`에 username/password/name을 전달하고 이후 별도 로그인한다. 상세 제약은 API 계약에 있다. 프론트 소스는 이 저장소에 없어 실제 프론트 수정은 포함하지 않고 매핑과 호출 예시를 제공한다. PG/가상 결제, 이메일·휴대폰 인증/계정 복구, 행사·공연장 운영 CRUD, 이미지 업로드, 대규모 검색 최적화·부하 검증·분산 요청 제한은 미구현이다. 현재 예매 확정은 **결제 없는 CONFIRMED / NOT_REQUIRED**이며 실제 결제를 뜻하지 않는다.
 
 Springdoc 버전은 [공식 설치 문서](https://springdoc.org/getting-started.html), Flyway starter는 [Spring Boot 공식 의존성 문서](https://docs.spring.io/spring-boot/4.0/reference/using/build-systems.html)를 기준으로 구성했다.

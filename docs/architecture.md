@@ -26,7 +26,7 @@ erDiagram
 
 ## 인증 결정
 
-- BCrypt cost 12로 비밀번호를 해시한다. 회원가입/비밀번호 재설정은 범위 밖이며 운영 계정은 신뢰된 별도 프로비저닝으로 생성해야 한다. 개발 계정은 dev 프로필에서만 생성한다.
+- BCrypt cost 12로 비밀번호를 해시한다. 공개 회원가입은 `/auth/signup`으로 일반 USER만 생성한다. username은 영문·숫자·밑줄 4~80자이며 기존 로그인과 동일하게 대소문자를 구분한다. password는 영문·숫자 포함 공백 없는 ASCII 8~72자로 BCrypt의 72바이트 한도를 지킨다. 이름은 제어문자 없이 최대 100자이고 앞뒤 공백을 제거한다. 기존 username UNIQUE 제약으로 동시 중복 가입을 방지하며 409 USERNAME_ALREADY_EXISTS를 반환한다. 가입은 세션을 발급하지 않는다. 관리자 계정은 신뢰된 별도 프로비저닝으로 생성해야 한다. 이메일/휴대폰 인증과 비밀번호 재설정은 범위 밖이다. 개발 계정은 dev 프로필에서만 생성한다.
 - 암호학적 난수 256bit opaque Bearer access token(15분), HttpOnly refresh 쿠키(7일)를 사용한다. DB에는 토큰의 SHA-256만 저장한다. 서버가 세션을 확인하므로 로그아웃·갱신 시 이전 access token도 즉시 폐기된다.
 - refresh는 트랜잭션/세션 행 잠금으로 한 번만 회전 가능하다. 동시 refresh 중 하나만 성공하므로 프론트는 갱신을 single-flight로 묶는다. 만료·폐기된 refresh는 401이다. 기기별 세션을 별도로 유지한다.
 - 쿠키: 이름 refresh_token, Path=/api/v1/auth, SameSite=Strict, HttpOnly, prod에서 Secure 강제. access token은 메모리에 보관하고 새로고침 시 refresh한다. 응답은 no-store. localStorage에 토큰을 저장하지 않는다.

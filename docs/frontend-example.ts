@@ -33,6 +33,13 @@ async function parse<T>(response: Response): Promise<T> {
   if (!response.ok) throw new ApiError(response.status, await response.json() as ErrorDto);
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
+// After signup succeeds, navigate to sign-in; signup does not issue a session.
+export async function signUp(username: string, password: string, name: string): Promise<AuthUser> {
+  return parse<AuthUser>(await fetch(`${BASE}/auth/signup`, {
+    method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, name }),
+  }));
+}
 export async function login(username: string, password: string): Promise<AuthUser> {
   const auth = await parse<AuthDto>(await fetch(`${BASE}/auth/login`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },

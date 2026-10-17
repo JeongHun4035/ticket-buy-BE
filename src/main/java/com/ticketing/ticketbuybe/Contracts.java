@@ -12,6 +12,15 @@ public class Contracts {
     public enum ContentCategory { NOTICE, GUIDE, UPDATE }
     public record Page<T>(List<T> items,long total,int page,int pageSize) {}
     public record User(String id,String name) {}
+    public record SignUp(
+        @NotBlank @Pattern(regexp="[A-Za-z0-9_]{4,80}")
+        @Schema(description="영문·숫자·밑줄 4~80자. 대소문자를 구분합니다.",example="ticket_user") String username,
+        @NotBlank @Pattern(regexp="(?=.*[A-Za-z])(?=.*[0-9])[!-~]{8,72}")
+        @Schema(description="영문과 숫자를 포함한 공백 없는 ASCII 8~72자. 특수문자 사용 가능.",example="Ticket1234!",accessMode=Schema.AccessMode.WRITE_ONLY) String password,
+        @NotBlank @Size(max=100) @Pattern(regexp="[^\\p{Cntrl}]{1,100}")
+        @Schema(description="표시 이름. 앞뒤 공백 제거, 최대 100자.",example="티켓 사용자") String name) {
+        @Override public String toString() { return "SignUp[REDACTED]"; }
+    }
     public record Login(@NotBlank @Size(max=80) @Schema(example="demo") String username,
                         @NotBlank @Size(max=100) @Schema(example="Demo1234!") String password) {}
     public record Auth(String accessToken,String tokenType,Instant expiresAt,User user) {}

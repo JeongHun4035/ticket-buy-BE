@@ -18,6 +18,23 @@ public class AuthService {
     public String hashPassword(String raw) { return passwords.encode(raw); }
     public record Principal(long id,String name,String role,String sessionId) {}
     public record Tokens(Auth auth,String refresh) {}
+    @Transactional
+    public User signUp(SignUp req) {
+        String passwordHash=hashPassword(req.password());
+        var key=new org.springframework.jdbc.support.GeneratedKeyHolder();
+        try {
+            s.db.update(connection->{
+                var ps=connection.prepareStatement("insert into app_user(username,password_hash,name,role) values(?,?,?,'USER')",new String[]{"id"});
+                ps.setString(1,req.username());
+                ps.setString(2,passwordHash);
+                ps.setString(3,req.name().strip());
+                return ps;
+            },key);
+        } catch(org.springframework.dao.DuplicateKeyException e) {
+            throw new ApiError(409,"USERNAME_ALREADY_EXISTS","이미 사용 중인 아이디입니다.");
+        }
+        return new User(Objects.requireNonNull(key.getKey()).toString(),req.name().strip());
+    }
     static String token() {
         byte[] bytes=new byte[32]; new SecureRandom().nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
