@@ -30,6 +30,8 @@ H2 파일 DB는 한 프로세스에서 사용한다. `Database may be already in
 
 환경 예시는 [.env.example](.env.example)에 있다. Spring은 `.env`를 자동 로딩하지 않는다. PowerShell `$env:변수='값'`으로 설정하거나 IDE 환경변수를 사용한다. Gradle 캐시 위치가 쓰기 불가능한 환경에서는 `$env:GRADLE_USER_HOME="$PWD/.gradle-user"`를 설정한다.
 
+실서버에서 로그인/가입 시 ORIGIN_NOT_ALLOWED가 발생하면 [공개 서버 Origin 설정](docs/server-origin.md)을 확인한다. CORS_ORIGINS는 브라우저 프론트 주소 목록이며 PUBLIC_BASE_URL의 Origin도 동일 정책으로 신뢰한다. 환경변수 적용 후 백엔드 프로세스를 재시작해야 한다.
+
 ## PostgreSQL 개발 실행
 
 Docker가 설치된 환경에서 전용 개발 DB를 준비한다.

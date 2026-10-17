@@ -37,7 +37,7 @@ V4는 id_allocator와 event_image(BYTEA)를 추가한다. ID 할당 행 잠금�
 - refresh는 트랜잭션/세션 행 잠금으로 한 번만 회전 가능하다. 동시 refresh 중 하나만 성공하므로 프론트는 갱신을 single-flight로 묶는다. 만료·폐기된 refresh는 401이다. 기기별 세션을 별도로 유지한다.
 - 쿠키: 이름 refresh_token, Path=/api/v1/auth, SameSite=Strict, HttpOnly, prod에서 Secure 강제. access token은 메모리에 보관하고 새로고침 시 refresh한다. 응답은 no-store. localStorage에 토큰을 저장하지 않는다.
 - 브라우저 쿠키 사용 auth 변경 요청의 Origin은 허용 목록과 대조한다. refresh 쿠키는 Strict라 운영 프론트/API를 같은 site의 HTTPS 도메인으로 배치해야 한다. 서로 다른 site 배치는 현재 지원 범위가 아니다. Bearer API는 쿠키로 인증하지 않는다.
-- CORS origin은 명시적 목록이다. localhost:5173 지원, credentials 허용. proxy의 신뢰할 수 없는 X-Forwarded-For는 사용하지 않는다.
+- CORS origin은 CORS_ORIGINS의 명시적 목록과 PUBLIC_BASE_URL에서 추출한 공개 Origin이다. CORS와 인증 변경 요청에 동일 OriginPolicy를 적용한다. localhost:5173 지원, credentials 허용. 기본 포트/설정 끝 슬래시는 정리하고 와일드카드·잘못된 Origin 설정은 거부한다. proxy의 신뢰할 수 없는 Host/X-Forwarded-*로 신뢰 Origin을 늘리지 않는다.
 - 민감 정보·SQL 인자·요청 본문·헤더는 로깅하지 않는다. 공통 오류는 traceId를 응답 헤더/본문에 포함한다. 프록시/APM도 Authorization/Cookie/비밀번호를 기록하지 않도록 구성해야 한다.
 - 프로세스별 제한: auth는 peer IP당 30회/분, 나머지 API는 인증 사용자당(비로그인은 peer IP당) 240회/분이다. 공유 IP의 서로 다른 로그인 사용자는 제한을 공유하지 않는다. 초과는 429/Retry-After=60. 별도로 사용자·회차·조회 종류별 최소 간격을 적용한다(대기 상태 기본 3초, 좌석 기본 2초). 거부 시 남은 초를 Retry-After로 제공하고 시도만으로 제한 시간이 연장되지 않는다. 이 최소 간격 제한은 프로세스 메모리 기반이며 DB 상태를 쓰지 않는다. 만료 키는 주기적으로 제거하고 기본 약 10만 키까지 보관한다. 전역 제한은 gateway/공유 rate limiter가 필요하다. 토큰 만료/로그아웃/권한 검증은 DB 기반으로 인스턴스 간 공유된다.
 

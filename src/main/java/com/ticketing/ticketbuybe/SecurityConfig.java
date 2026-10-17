@@ -25,10 +25,11 @@ public class SecurityConfig {
     @Bean org.springframework.security.core.userdetails.UserDetailsService noFormLogin() {
         return username->{throw new org.springframework.security.core.userdetails.UsernameNotFoundException("Bearer authentication only");};
     }
-    @Bean SecurityFilterChain chain(HttpSecurity http,AuthService auth,ObjectMapper json,ReadRequestLimiter reads,
-                                    @Value("${app.origins}") String origins) throws Exception {
-        var allowed=Arrays.stream(origins.split(",")).map(String::trim).toList();
-        var cors=new CorsConfiguration(); cors.setAllowedOrigins(allowed); cors.setAllowCredentials(true);
+    @Bean SecurityFilterChain chain(HttpSecurity http,AuthService auth,ObjectMapper json,ReadRequestLimiter reads,OriginPolicy origins) throws Exception {
+        var cors=new CorsConfiguration() {
+            @Override public String checkOrigin(String origin) {return origins.allows(origin)?origin:null;}
+        };
+        cors.setAllowedOrigins(origins.allowedOrigins()); cors.setAllowCredentials(true);
         cors.setAllowedMethods(List.of("GET","POST","PATCH","DELETE","OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization","Content-Type","X-Admission-Token","Idempotency-Key"));
         cors.setExposedHeaders(List.of("X-Trace-Id","Retry-After","X-Poll-After"));
@@ -47,7 +48,7 @@ public class SecurityConfig {
                     try {
                         if(r.getRequestURI().startsWith("/api/v1/auth/") && !r.getMethod().equals("GET")) {
                             String origin=r.getHeader("Origin");
-                            if(origin!=null&&!allowed.contains(origin)) throw new ApiError(403,"ORIGIN_NOT_ALLOWED","허용되지 않은 Origin입니다.");
+                            if(origin!=null&&!origins.allows(origin)) throw new ApiError(403,"ORIGIN_NOT_ALLOWED","허용되지 않은 Origin입니다. 서버의 CORS_ORIGINS와 PUBLIC_BASE_URL 설정을 확인하세요.");
                         }
                         String header=r.getHeader("Authorization");
                         if(header!=null) {

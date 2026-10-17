@@ -1,9 +1,10 @@
 # 구현 검증 결과
 
-`gradlew test bootJar --offline --no-daemon` 성공. Java 21, Spring Boot 4.0.8. 총 25개 테스트(통합 22 + 컨텍스트 1 + 마이그레이션/프로필 2), 실패 0. 보고서는 `build/reports/tests/test/index.html`에 생성된다.
+`gradlew test bootJar --offline --no-daemon` 성공. Java 21, Spring Boot 4.0.8. 총 29개 테스트(통합 23 + Origin 정책 3 + 컨텍스트 1 + 마이그레이션/프로필 2), 실패 0. 보고서는 `build/reports/tests/test/index.html`에 생성된다.
 
 | 검증 | 확인 결과 |
 | --- | --- |
+| 배포 Origin | PUBLIC_BASE_URL=http://34.64.146.19를 설정한 로컬 HTTP 서버에서 해당 Origin의 가입 201, demo/admin 로그인 200, OPTIONS 200 확인. 기본 포트/슬래시 정규화, 미허용 도메인·포트·프로토콜 및 와일드카드 거부. 외부 서버 설정 자체는 변경하지 않음 |
 | 이미지 첨부 행사 등록 | 실제 multipart ADMIN 201, 비로그인 401/일반 사용자 403. 관리자 공연장/구역 조회, 회차·500석 편성 및 기존 대기열·확보·예매 연결, 서버 가격 합계 검증 |
 | 이미지 검증·원자성 | PNG 업로드/공개 GET·304 ETag, 누락/빈 파일/위조 MIME/잘못된 이미지/SVG/치수·5MiB 초과 거부. 잘못된 날짜·외부 구역 거부. 회차 DB 충돌 시 이미지·행사도 rollback |
 | 기본 포스터 | dev 행사 8개 URL의 정적 SVG 응답 200, 후속 시드 재실행으로 사용자 지정 포스터를 변경하지 않음. prod에서 포스터 시드도 제외 |
