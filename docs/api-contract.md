@@ -1,6 +1,10 @@
 # API v1 계약
 
+관리자 행사 등록은 `POST /api/v1/admin/events`(multipart event JSON + image 파일)이며 공연장/구역 선택과 이미지 저장 정책은 [관리자 행사·이미지 계약](admin-events.md)을 참고한다. dev 행사 포스터 8개와 PUBLIC_BASE_URL 기반 posterUrl을 제공한다.
+
 Base URL `/api/v1`. JSON UTF-8. 시각은 ISO 8601 UTC(Z), 프론트 표시는 `Intl.DateTimeFormat`과 사용자 언어/Asia/Seoul을 사용한다. 금액은 정수 KRW. 페이지는 1부터, pageSize 기본 20/최대 100. 목록 `{items,total,page,pageSize}`. 좌석 배치와 장르는 전체 목록 1페이지 반환. 중첩 seats는 부모 리소스 구성 요소다. 성공 본문·스키마·각 파라미터는 실행 중 `/v3/api-docs`에서도 확인할 수 있다.
+
+공연장·층·구역 기능은 [프론트 전달 문서](venue-sections-frontend.md)에 실제 ID·전체 JSON·좌표 규칙과 함께 정리했다. `GET /performances/{performanceId}/sections`와 `GET /performances/{performanceId}/sections/{sectionId}/seats`를 추가했으며 기존 전체 좌석 조회도 유지한다. 두 API 모두 Bearer + X-Admission-Token 필수다. 구역/전체 좌석은 고정 1페이지이며 pageSize는 실제 반환 개수라 일반 목록의 최대 100 제한과 다르다. 좌석·확보·예매 좌석 항목에 sectionId/section/floor/floorId, 행사에 venueId/venueCapacity, 회차에 venueCapacity를 추가했다. 하단의 기존 응답 예시는 주요 필드 중심이며 최신 전체 예시는 Swagger와 별도 전달 문서를 참고한다.
 
 ## 인증 및 헤더
 
@@ -12,7 +16,7 @@ Base URL `/api/v1`. JSON UTF-8. 시각은 ISO 8601 UTC(Z), 프론트 표시는 `
 {"username":"ticket_user","password":"Ticket1234!","name":"티켓 사용자"}
 ```
 
-성공 201 응답은 `{"id":"4","name":"티켓 사용자"}`이다. username은 영문·숫자·밑줄 4~80자, 대소문자를 구분하고 공백을 허용하지 않는다. password는 영문과 숫자를 모두 포함한 공백 없는 ASCII 8~72자이며 특수문자 사용이 가능하다. BCrypt의 72바이트 한도를 넘는 입력은 거부한다. name은 공백만 입력할 수 없고 제어문자 없이 최대 100자이며 저장 시 앞뒤 공백을 제거한다. 사용자 권한은 서버가 항상 USER로 지정한다.
+성공 201 응답은 `{"id":"4","name":"티켓 사용자","role":"USER"}`이다. username은 영문·숫자·밑줄 4~80자, 대소문자를 구분하고 공백을 허용하지 않는다. password는 영문과 숫자를 모두 포함한 공백 없는 ASCII 8~72자이며 특수문자 사용이 가능하다. BCrypt의 72바이트 한도를 넘는 입력은 거부한다. name은 공백만 입력할 수 없고 제어문자 없이 최대 100자이며 저장 시 앞뒤 공백을 제거한다. 사용자 권한은 서버가 항상 USER로 지정한다.
 
 입력 오류는 400 INVALID_REQUEST, 중복 아이디는 409 USERNAME_ALREADY_EXISTS이다. 동시 가입도 DB UNIQUE 제약으로 한 건만 생성된다. 기존 인증 API와 동일한 Origin/CORS 및 요청 제한(30회/분)을 적용한다. 이메일/휴대폰 인증은 제공하지 않는다. 기존 app_user 스키마를 사용하므로 추가 마이그레이션은 필요 없다.
 
@@ -29,10 +33,12 @@ Origin: http://localhost:5173
 200 응답(토큰은 형식 예시):
 
 ```json
-{"accessToken":"opaque-random-token","tokenType":"Bearer","expiresAt":"2026-10-18T03:15:00Z","user":{"id":"1","name":"예매 사용자"}}
+{"accessToken":"opaque-random-token","tokenType":"Bearer","expiresAt":"2026-10-18T03:15:00Z","user":{"id":"1","name":"예매 사용자","role":"USER"}}
 ```
 
-동시에 Set-Cookie refresh_token(HttpOnly/SameSite=Strict, prod Secure)를 설정한다. 후속 보호 API는 `Authorization: Bearer <accessToken>` 사용. `POST /auth/refresh`는 쿠키로 갱신(200/401), `POST /auth/logout`은 Bearer 또는 쿠키 세션 폐기(204). `GET /users/me`는 `{id,name}`(200/401). 브라우저는 credentials: include. 갱신 시 기존 access token 폐기. 비밀번호·토큰·쿠키는 로그/분석 이벤트에 기록하지 않는다.
+동시에 Set-Cookie refresh_token(HttpOnly/SameSite=Strict, prod Secure)를 설정한다. 후속 보호 API는 `Authorization: Bearer <accessToken>` 사용. `POST /auth/refresh`는 쿠키로 갱신(200/401), `POST /auth/logout`은 Bearer 또는 쿠키 세션 폐기(204). `GET /users/me`는 `{id,name,role}`(200/401). 브라우저는 credentials: include. 갱신 시 기존 access token 폐기. 비밀번호·토큰·쿠키는 로그/분석 이벤트에 기록하지 않는다.
+
+권한 코드는 `USER`(일반 사용자), `ADMIN`(관리자)이다. 로그인·갱신 응답의 user.role과 회원가입·내 정보 응답의 role에 포함된다. 프론트는 `user.role === 'ADMIN'`으로 콘텐츠 관리 메뉴를 표시한다. 클라이언트에서 이 값을 바꾸더라도 서버는 DB의 권한을 검사한다. 회원가입 요청으로 권한을 지정하거나 변경할 수 없다. 기존 DB role 컬럼과 코드가 동일하므로 스키마 마이그레이션은 필요 없다.
 
 ## 행사
 
@@ -67,18 +73,22 @@ sort: RECOMMENDED(추천순위 내림차순/id순), DATE_ASC(대표 회차 시�
 모두 Bearer 필요. POST /performances/{performanceId}/queue 진입(200), GET 같은 경로 /me로 상태 조회(200), DELETE /me 취소(204). 예: `/performances/101/queue/me`.
 
 ```json
-{"state":"WAITING","ticketNumber":51,"aheadCount":0,"estimatedWaitSeconds":null,"admissionToken":null,"admissionExpiresAt":null,"pollAfterSeconds":3}
+{"state":"WAITING","ticketNumber":51,"aheadCount":0,"position":1,"estimatedWaitSeconds":null,"admissionToken":null,"admissionExpiresAt":null,"pollAfterSeconds":3}
 ```
 
 ```json
-{"state":"ADMITTED","ticketNumber":1,"aheadCount":0,"estimatedWaitSeconds":null,"admissionToken":"opaque-admission-token","admissionExpiresAt":"2026-10-18T03:10:00Z","pollAfterSeconds":30}
+{"state":"ADMITTED","ticketNumber":1,"aheadCount":0,"position":null,"estimatedWaitSeconds":null,"admissionToken":"opaque-admission-token","admissionExpiresAt":"2026-10-18T03:10:00Z","pollAfterSeconds":30}
 ```
 
-ticketNumber는 회차별 누적 발급 순번, aheadCount는 앞선 WAITING 인원(입장자는 제외). 첫 대기자는 앞선 대기자 0명이어도 입장자 용량이 차면 대기한다. 예상 시간 추정 근거가 없어 null. 진행률은 임의 계산하지 않는다. WAITING → ADMITTED → EXPIRED, 또는 취소 시 CANCELLED. 동일 사용자 활성 재진입은 같은 상태. EXPIRED/CANCELLED 재진입은 새 순번. 토큰은 재조회로 연장되지 않는다. 입장 권한은 해당 사용자·회차에만 유효하다. 미진입 상태 조회는 404. 판매 시작 전/마감 진입은 409.
+ticketNumber는 회차별 누적 발급 순번, aheadCount는 앞선 WAITING 인원(입장자는 제외). position은 WAITING일 때 aheadCount+1, 그 외 null이다. UI에는 position을 '현재 대기순서', ticketNumber를 '발급 번호'로 구분해 표시한다. 최초 진입은 WAITING, 작업자가 기본 1초 주기로 입장 용량 내에서 순서대로 승격한다. GET은 DB 잠금·갱신 없이 상태를 조회하며 승격을 수행하지 않는다. 첫 대기자는 앞선 대기자 0명이어도 입장자 용량이 차면 대기한다. 예상 시간 추정 근거가 없어 null. 진행률은 임의 계산하지 않는다. WAITING → ADMITTED → EXPIRED, 또는 취소 시 CANCELLED. 동일 사용자 활성 재진입은 같은 상태. EXPIRED/CANCELLED 재진입은 새 순번. 토큰은 재조회로 연장되지 않는다. 입장 권한은 해당 사용자·회차에만 유효하다. 미진입 상태 조회는 404. 판매 시작 전/마감 진입은 409.
+
+GET queue/me는 사용자·회차별 최소 조회 간격 기본 3초, GET seats는 기본 2초다. 두 경로의 간격 제한은 독립이며 다른 사용자와 공유하지 않는다. 응답은 Cache-Control: no-store, X-Poll-After(초)를 제공한다. 빠른 반복 요청은 429 RATE_LIMITED 및 Retry-After(남은 초)를 반환한다. 프론트는 이 시간 이후 약간의 양수 jitter를 더해 재요청하고, 이전 요청이 완료되기 전에 중복 폴링하지 않는다. 제한은 현재 프로세스 단위이며 다중 인스턴스 전역 제한은 게이트웨이가 필요하다.
 
 ## 좌석·확보
 
 GET /performances/{performanceId}/seats: Bearer + `X-Admission-Token` 필수. 서버가 판매 기간과 권한을 재검증한다.
+
+이 조회는 performance 행을 잠그거나 만료 정리를 수행하지 않는다. worker가 아직 DB 참조를 정리하지 않았더라도 확보 만료 시각이 지났으면 AVAILABLE로 표시한다. 조회 결과는 스냅샷이며 좌석 확보 성공을 보장하지 않는다. 확보·예매 API는 트랜잭션에서 재고와 권한을 다시 검증하므로 조회 후 충돌은 409로 처리한다.
 
 ```json
 {"items":[{"id":"1","row":"A","number":1,"x":1,"y":1,"grade":"VIP","price":150000,"status":"AVAILABLE"}],"total":96,"page":1,"pageSize":96}
@@ -137,6 +147,8 @@ GET /support/info: serviceName/phone/email/timezone/message. 미설정 연락처
 
 관리 경로는 /admin/faqs, /admin/posts. POST 등록(201), PATCH /{id} 수정(200, 맵 전체 교체), DELETE /{id} 삭제(204). 모두 ADMIN Bearer 필요. 요청:
 
+URL 및 저장/삭제 서비스 양쪽에서 ADMIN 권한을 검사한다. 비로그인 사용자는 401 AUTHENTICATION_REQUIRED, 일반 사용자는 403 FORBIDDEN이며 데이터가 변경되지 않는다. 공개 GET /faqs, /posts, /posts/{postId}는 관리자 여부와 관계없이 조회할 수 있다. 프론트 관리 메뉴 표시와 별개로 서버가 접근을 차단한다.
+
 ```json
 {"category":"GUIDE","titles":{"ko":"이용 안내","en":"Guide","zh-CN":"指南"},"bodies":{"ko":"내용","en":"Content","zh-CN":"内容"}}
 ```
@@ -173,6 +185,6 @@ traceId는 X-Trace-Id 응답 헤더에도 있다. 클라이언트 분기는 mess
 
 `docs/frontend-example.ts`를 참고한다. VITE_API_BASE_URL=http://localhost:8080/api/v1 설정. 목록은 response.items로 바꾸고 total/page/pageSize를 페이지 UI에 반영한다. genre/status 표시문자 대신 코드로 분기한다. art는 제거하고 posterUrl 또는 로컬 fallback 이미지 사용. date와 price는 null 가능하여 빈 값 처리하고 실제 예매는 회차를 선택해야 한다. CLOSED 표시를 기존 두 상태 union에 추가한다.
 
-AuthUser는 그대로 {id,name}. FAQ question←title, answer←content. 게시글 category는 번역 코드, date는 ISO. 좌석 reserved←status !== AVAILABLE, 현재 내 확보는 별도의 selected 상태로 표시한다. 홀드 결과 서버 total을 최종 금액으로 사용하고 expiresAt 기준 타이머를 표시한다. 선택만 한 좌석은 확보된 것이 아니며 확보 POST 성공 후만 HELD로 표시한다.
+AuthUser는 {id,name,role}로 확장한다(role: 'USER' | 'ADMIN'). FAQ question←title, answer←content. 게시글 category는 번역 코드, date는 ISO. 좌석 reserved←status !== AVAILABLE, 현재 내 확보는 별도의 selected 상태로 표시한다. 홀드 결과 서버 total을 최종 금액으로 사용하고 expiresAt 기준 타이머를 표시한다. 선택만 한 좌석은 확보된 것이 아니며 확보 POST 성공 후만 HELD로 표시한다.
 
 30초 대기 시뮬레이션/바로 입장 버튼은 제거한다. 응답 pollAfterSeconds 주기로 직렬 폴링하고 ADMITTED일 때만 좌석 화면으로 이동한다. estimatedWaitSeconds=null이면 '계산 중' 또는 '예상 시간 제공 불가' 표시. 진행률은 고정 30000 기준으로 계산하지 않는다. 컴포넌트 해제 시 타이머/요청을 취소한다. 보유한 입장 토큰·hold id·멱등 키는 해당 동작 동안 유지하되 로그나 URL에 넣지 않는다. 오류가 나면 좌석/대기열을 서버에서 다시 조회한다.

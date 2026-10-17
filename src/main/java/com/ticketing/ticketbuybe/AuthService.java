@@ -16,7 +16,7 @@ public class AuthService {
     final String dummy=passwords.encode("unusable-dummy-password");
     public AuthService(Store s) { this.s=s; }
     public String hashPassword(String raw) { return passwords.encode(raw); }
-    public record Principal(long id,String name,String role,String sessionId) {}
+    public record Principal(long id,String name,Role role,String sessionId) {}
     public record Tokens(Auth auth,String refresh) {}
     @Transactional
     public User signUp(SignUp req) {
@@ -33,7 +33,7 @@ public class AuthService {
         } catch(org.springframework.dao.DuplicateKeyException e) {
             throw new ApiError(409,"USERNAME_ALREADY_EXISTS","이미 사용 중인 아이디입니다.");
         }
-        return new User(Objects.requireNonNull(key.getKey()).toString(),req.name().strip());
+        return new User(Objects.requireNonNull(key.getKey()).toString(),req.name().strip(),Role.USER);
     }
     static String token() {
         byte[] bytes=new byte[32]; new SecureRandom().nextBytes(bytes);
@@ -59,7 +59,7 @@ public class AuthService {
             s.db.update("update auth_session set access_hash=?,refresh_hash=?,access_expires=?,refresh_expires=? where id=?",
                 hash(access),hash(refresh),utc(now.plusSeconds(900)),utc(now.plusSeconds(604800)),session);
         }
-        return new Tokens(new Auth(access,"Bearer",now.plusSeconds(900),new User(user.get("id").toString(),user.get("name").toString())),refresh);
+        return new Tokens(new Auth(access,"Bearer",now.plusSeconds(900),new User(user.get("id").toString(),user.get("name").toString(),Role.valueOf(user.get("role").toString()))),refresh);
     }
     @Transactional
     public Tokens refresh(String refresh) {
@@ -73,7 +73,7 @@ public class AuthService {
     public Principal authenticate(String raw) {
         var rows=s.db.queryForList("select u.id,u.name,u.role,a.id session_id from auth_session a join app_user u on u.id=a.user_id where a.access_hash=? and a.access_expires>?",hash(raw),utc(Instant.now()));
         if(rows.isEmpty()) throw new ApiError(401,"TOKEN_EXPIRED","유효한 인증 토큰이 필요합니다.");
-        var u=rows.getFirst(); return new Principal(num(u,"id"),u.get("name").toString(),u.get("role").toString(),u.get("session_id").toString());
+        var u=rows.getFirst(); return new Principal(num(u,"id"),u.get("name").toString(),Role.valueOf(u.get("role").toString()),u.get("session_id").toString());
     }
     @Transactional
     public void logout(Principal p,String refresh) {

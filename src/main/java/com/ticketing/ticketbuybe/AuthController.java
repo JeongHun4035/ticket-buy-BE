@@ -40,6 +40,6 @@ public class AuthController {
         auth.logout(p,refresh); return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE,cookie("",0)).build();
     }
     @GetMapping("/users/me")
-    @Operation(summary="내 정보",description="Bearer 인증 필요. 프론트 AuthUser와 동일한 id/name을 반환합니다.")
-    public User me(@AuthenticationPrincipal AuthService.Principal p) { return new User(Long.toString(p.id()),p.name()); }
+    @Operation(summary="내 정보",description="Bearer 인증 필요. id/name/role을 반환합니다. 권한 코드 USER는 일반 사용자, ADMIN은 관리자입니다. 권한은 서버에 저장된 값으로 결정합니다.")
+    public User me(@AuthenticationPrincipal AuthService.Principal p) { return new User(Long.toString(p.id()),p.name(),p.role()); }
 }

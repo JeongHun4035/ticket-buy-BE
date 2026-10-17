@@ -16,18 +16,28 @@ public class BookingController {
     final BookingService service;
     public BookingController(BookingService service) { this.service=service; }
     @PostMapping("/performances/{performanceId}/queue")
-    @Operation(summary="대기열 진입",description="Bearer 필요. 동일 사용자 재진입은 기존 상태를 반환합니다. EXPIRED/CANCELLED에서 진입하면 새 순번을 받습니다. ticketNumber는 회차별 누적 발급 순번(1부터), aheadCount는 앞선 WAITING 인원입니다. 용량이 있으면 즉시 ADMITTED입니다.")
+    @Operation(summary="대기열 진입",description="Bearer 필요. 최초 WAITING으로 진입하며 별도 작업자가 순번대로 입장시킵니다. 동일 사용자 활성 재진입은 기존 순번 유지. EXPIRED/CANCELLED 재진입은 새 순번. ticketNumber는 누적 발급 순번, aheadCount는 앞선 WAITING 인원, position은 WAITING일 때 현재 대기순서입니다.")
     public Queue enter(@PathVariable @Positive long performanceId,@AuthenticationPrincipal AuthService.Principal p) {return service.enter(performanceId,p.id());}
     @GetMapping("/performances/{performanceId}/queue/me")
-    @Operation(summary="내 대기 상태",description="Bearer 필요. WAITING → ADMITTED → EXPIRED 또는 CANCELLED. estimatedWaitSeconds는 추정 근거가 없어 null. pollAfterSeconds 후 조회하세요. ADMITTED 응답의 admissionToken을 X-Admission-Token에 전달합니다.")
+    @Operation(summary="내 대기 상태",description="Bearer 필요. DB 행 잠금·갱신 없이 상태와 순서를 조회합니다. WAITING → ADMITTED → EXPIRED 또는 CANCELLED. position=앞선 WAITING 인원+1(다른 상태 null). 예상 시간은 null. pollAfterSeconds 이후 폴링, 빠른 반복 조회는 429/Retry-After. ADMITTED의 admissionToken을 X-Admission-Token에 전달합니다. Cache-Control: no-store.")
     public Queue queue(@PathVariable @Positive long performanceId,@AuthenticationPrincipal AuthService.Principal p) {return service.queue(performanceId,p.id());}
     @DeleteMapping("/performances/{performanceId}/queue/me") @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary="대기 취소",description="본인의 입장 권한 및 활성 확보를 해제합니다. Bearer 필요.")
     public void leave(@PathVariable @Positive long performanceId,@AuthenticationPrincipal AuthService.Principal p) {service.leave(performanceId,p.id());}
     @GetMapping("/performances/{performanceId}/seats")
-    @Operation(summary="회차 좌석 배치·재고",description="Bearer 및 해당 사용자·회차의 X-Admission-Token 필요. 좌표 x/y, 등급 VIP/R/S, 정수 KRW, AVAILABLE/HELD/RESERVED를 반환합니다. 목록은 items/total/page/pageSize이며 좌석 전체를 한 페이지로 반환합니다.")
-    public Page<Seat> seats(@PathVariable @Positive long performanceId,@AuthenticationPrincipal AuthService.Principal p,@RequestHeader("X-Admission-Token") String token) {
-        var rows=service.seats(performanceId,p.id(),token);return new Page<>(rows,rows.size(),1,rows.size());
+    @Operation(summary="회차 좌석 배치·재고",description="Bearer 및 해당 사용자·회차의 X-Admission-Token 필요. 잠금·갱신 없는 조회 스냅샷이며 확보 성공을 보장하지 않습니다. 만료 확보는 AVAILABLE로 표시. 기본 2초 최소 조회 간격, X-Poll-After 참고. 초과는 429/Retry-After. Cache-Control: no-store. 좌표 x/y, 등급 VIP/R/S, 정수 KRW, AVAILABLE/HELD/RESERVED. 좌석 전체를 items/total/page/pageSize 1페이지로 반환합니다.")
+    public Page<Seat> seats(@PathVariable @Positive long performanceId,@AuthenticationPrincipal AuthService.Principal p,@RequestHeader("X-Admission-Token") String token,@RequestParam(defaultValue="ko") @Pattern(regexp="ko|en|zh-CN") String lang) {
+        var rows=service.seats(performanceId,p.id(),token,lang);return new Page<>(rows,rows.size(),1,rows.size());
+    }
+    @GetMapping("/performances/{performanceId}/sections")
+    @Operation(summary="공연장·층·구역 및 잔여 좌석",description="Bearer 및 해당 회차 X-Admission-Token 필수. lang=ko/en/zh-CN(기본 ko, 누락 번역 ko). venue의 capacity/mapWidth/mapHeight, 층 목록과 구역 집계 목록을 반환합니다. 구역 x/y/width/height는 해당 층 전체 지도 좌표입니다. totalSeats는 회차에 편성된 좌석, availableSeats는 유효 확보·예매를 제외한 조회 시점 참고 값입니다. DB 집계로 처리하며 좌석 객체를 전부 로딩하지 않습니다. 전체 구역 1페이지, 순서 층 level/구역 sortOrder/id. 기본 2초 제한/429 Retry-After, Cache-Control: no-store. 없는 회차는 404, 입장 권한 오류 403, 판매 기간 오류 409.")
+    public Sections sections(@PathVariable @Positive long performanceId,@AuthenticationPrincipal AuthService.Principal p,@RequestHeader("X-Admission-Token") String token,@RequestParam(defaultValue="ko") @Pattern(regexp="ko|en|zh-CN") String lang) {
+        return service.sections(performanceId,p.id(),token,lang);
+    }
+    @GetMapping("/performances/{performanceId}/sections/{sectionId}/seats")
+    @Operation(summary="구역별 좌석 배치·재고",description="Bearer 및 해당 회차 X-Admission-Token 필수. lang=ko/en/zh-CN. 해당 회차·구역에 편성된 좌석만 1페이지로 반환합니다. 좌석 x/y는 구역 내부 좌표, sectionId/section/floor/floorId로 위치를 식별합니다. 다른 공연장 구역 또는 회차에 없는 구역은 404. 재고는 AVAILABLE/HELD/RESERVED, 만료 확보는 AVAILABLE. 조회는 확보를 보장하지 않고 최종 hold에서 검증합니다. 전체 좌석 API와 사용자·회차별 최소 2초 간격을 공유합니다. 초과 429/Retry-After, no-store.")
+    public Page<Seat> sectionSeats(@PathVariable @Positive long performanceId,@PathVariable @Positive long sectionId,@AuthenticationPrincipal AuthService.Principal p,@RequestHeader("X-Admission-Token") String token,@RequestParam(defaultValue="ko") @Pattern(regexp="ko|en|zh-CN") String lang) {
+        var rows=service.sectionSeats(performanceId,sectionId,p.id(),token,lang);return new Page<>(rows,rows.size(),1,rows.size());
     }
     @PostMapping("/performances/{performanceId}/holds") @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary="최대 4석 임시 확보",description="Bearer와 X-Admission-Token 필요. 기존 ACTIVE 확보와 합쳐 최대 4석. 전부 확보되거나 전부 실패합니다. 409 SEAT_CONFLICT이면 좌석을 다시 조회하세요. expiresAt 이후 사용 불가, 기본 300초. 가격은 서버에서 계산합니다.")

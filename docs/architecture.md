@@ -10,7 +10,9 @@ Java 21, Spring Boot 4.0.8, Gradle 9.8.1, Spring MVC/JPA/Validation/Actuator, Po
 erDiagram
   EVENT ||--o{ PERFORMANCE : schedules
   VENUE ||--o{ PERFORMANCE : hosts
-  VENUE ||--o{ VENUE_SEAT : layout
+  VENUE ||--o{ VENUE_FLOOR : floors
+  VENUE_FLOOR ||--o{ VENUE_SECTION : sections
+  VENUE_SECTION ||--o{ VENUE_SEAT : layout
   PERFORMANCE ||--o{ PERFORMANCE_SEAT : inventory
   VENUE_SEAT ||--o{ PERFORMANCE_SEAT : position
   APP_USER ||--o{ QUEUE_ENTRY : joins
@@ -22,7 +24,11 @@ erDiagram
 
 행사는 제목·설명·장르·포스터 URL을 갖고, 회차는 장소·시작·오픈·마감 시각을 갖는다. venue_seat는 공연장 고정 배치, performance_seat는 회차별 등급·가격·확보·판매 재고다. 배치를 변경해야 하는 공연장은 새 venue 식별자로 배치 버전을 만들고 기존 예매 배치를 변경하지 않는다. reservation_item은 취소·가격 변경 후에도 원래 등급/가격을 보존한다. 금액은 BIGINT 정수 KRW다. 목록 대표 회차는 판매 중 회차 우선, 다음 오픈 예정, 마지막 종료 회차 순이다. 표시 최저가는 행사 전체 회차의 최저 가격이다.
 
-다국어 텍스트는 JSON 문자열 맵으로 저장하며 키는 `ko`, `en`, `zh-CN`이다. `lang` 쿼리 기본값은 ko, 번역 누락은 ko로 fallback한다. 관리 API는 ko 필수다. 장르·판매·재고·예매 상태는 언어 독립 코드이고 프론트에서 번역한다. PostgreSQL DB도 UTF8 인코딩으로 생성한다. 소스·마이그레이션·HTTP·Gradle 컴파일은 UTF-8이다. 포스터는 nullable URL이며 현재 시드에 실제 이미지가 없어 null이다.
+V3에서 venue_floor와 venue_section을 추가했다. 좌석의 유일성은 (section_id,row_label,seat_number)이며 구역이 다르면 같은 열·번호를 사용할 수 있다. 기존 좌석 ID는 변경하지 않고 기본 층/구역에 귀속한다. performance_seat는 section_id/venue_id를 함께 보유하고 복합 FK로 회차의 공연장과 좌석/구역 공연장이 일치하도록 강제한다. 회차별 PK(performance_id,seat_id)로 같은 물리 좌석을 여러 회차에 독립 편성한다. 구역 조회는 SQL GROUP BY로 전체/잔여 수를 집계하며 좌석 엔티티를 전부 로딩하지 않는다. 구역 재고는 (performance_id,section_id,seat_id) 인덱스로 선택 구역만 조회한다. 지도는 venue.map_width/map_height와 구역 사각형 좌표, 좌석의 구역 내부 좌표를 분리한다.
+
+다국어 텍스트는 JSON 문자열 맵으로 저장하며 키는 `ko`, `en`, `zh-CN`이다. `lang` 쿼리 기본값은 ko, 번역 누락은 ko로 fallback한다. 관리 API는 ko 필수다. 장르·판매·재고·예매 상태는 언어 독립 코드이고 프론트에서 번역한다. PostgreSQL DB도 UTF8 인코딩으로 생성한다. 소스·마이그레이션·HTTP·Gradle 컴파일은 UTF-8이다. 포스터는 기존 데이터 호환상 nullable이지만 개발 행사 8개에는 번들 포스터를 연결하고 새 관리자 등록은 PNG/JPEG 첨부가 필수다. DB 상대 경로를 PUBLIC_BASE_URL로 조합해 API에 공개 URL을 반환한다.
+
+V4는 id_allocator와 event_image(BYTEA)를 추가한다. ID 할당 행 잠금으로 행사·회차 신규 ID를 동시 등록에서도 분리하며, 초기값은 기존 최대 ID보다 크고 최소 100000이다. 이미지 디코딩/용량/치수를 검증하고 재인코딩하며 원본 파일명은 쓰지 않는다. 행사·회차·선택 구역 전체 좌석 재고·이미지는 같은 DB 트랜잭션으로 저장한다. 실패 시 이미지도 rollback되어 외부 파일 정리가 필요 없다. 이미지 GET은 공개 불변 URL과 캐시/ETag를 사용한다. 대량 이미지 운영 시 DB 저장 비용을 측정하고 객체 저장소/CDN 전환을 검토한다.
 
 ## 인증 결정
 
@@ -33,23 +39,25 @@ erDiagram
 - 브라우저 쿠키 사용 auth 변경 요청의 Origin은 허용 목록과 대조한다. refresh 쿠키는 Strict라 운영 프론트/API를 같은 site의 HTTPS 도메인으로 배치해야 한다. 서로 다른 site 배치는 현재 지원 범위가 아니다. Bearer API는 쿠키로 인증하지 않는다.
 - CORS origin은 명시적 목록이다. localhost:5173 지원, credentials 허용. proxy의 신뢰할 수 없는 X-Forwarded-For는 사용하지 않는다.
 - 민감 정보·SQL 인자·요청 본문·헤더는 로깅하지 않는다. 공통 오류는 traceId를 응답 헤더/본문에 포함한다. 프록시/APM도 Authorization/Cookie/비밀번호를 기록하지 않도록 구성해야 한다.
-- 프로세스별 peer IP 제한: auth 30회/분, 나머지 API 240회/분, 초과 시 429/Retry-After=60. 운영 다중 인스턴스의 전역 요청 제한은 gateway/공유 rate limiter를 추가해야 한다. 토큰 만료/로그아웃/권한 검증은 DB 기반으로 인스턴스 간 공유된다.
+- 프로세스별 제한: auth는 peer IP당 30회/분, 나머지 API는 인증 사용자당(비로그인은 peer IP당) 240회/분이다. 공유 IP의 서로 다른 로그인 사용자는 제한을 공유하지 않는다. 초과는 429/Retry-After=60. 별도로 사용자·회차·조회 종류별 최소 간격을 적용한다(대기 상태 기본 3초, 좌석 기본 2초). 거부 시 남은 초를 Retry-After로 제공하고 시도만으로 제한 시간이 연장되지 않는다. 이 최소 간격 제한은 프로세스 메모리 기반이며 DB 상태를 쓰지 않는다. 만료 키는 주기적으로 제거하고 기본 약 10만 키까지 보관한다. 전역 제한은 gateway/공유 rate limiter가 필요하다. 토큰 만료/로그아웃/권한 검증은 DB 기반으로 인스턴스 간 공유된다.
 
 ## 대기열 저장소와 상태
 
-PostgreSQL queue_entry를 사용한다. 좌석 DB와 동일 트랜잭션 안에서 입장 검증·만료·확보를 제어하고, 다중 인스턴스에서도 중복 진입을 UNIQUE(performance_id,user_id)로 방지하기 위해 선택했다. Redis 별도 장애/복구·DB 간 원자성 문제가 없다. 회차별 행 잠금이 처리량 한계이므로 대규모 트래픽에서는 측정 후 Redis 입장 제어 및 DB 최종 검증을 도입할 수 있다. 현재 3만 명 규모 부하 성능을 보증하는 구현은 아니다.
+PostgreSQL queue_entry를 사용한다. 좌석 DB와 동일 트랜잭션 안에서 최종 입장 검증·확보를 제어하고, 다중 인스턴스에서도 중복 진입을 UNIQUE(performance_id,user_id)로 방지하기 위해 선택했다. Redis 별도 장애/복구·DB 간 원자성 문제가 없다. 대기 상태·좌석 GET은 읽기 전용이며 performance 행 잠금이나 정리 UPDATE를 수행하지 않는다. 변경 요청과 작업자만 회차 잠금을 사용한다. 순번은 인덱스 범위 count로 계산하므로 큰 대기열에서는 조회 비용이 남으며 측정 후 Redis 순위 조회 등을 도입할 수 있다. 현재 3만 명 규모 부하 성능을 보증하는 구현은 아니다.
 
-`POST queue`: 최초 WAITING, 자리가 있으면 즉시 ADMITTED. 활성 중복 진입은 기존 순번/토큰 유지. EXPIRED/CANCELLED 재진입은 새 순번으로 줄 끝에 배치된다. `ticketNumber`는 회차별 누적 발급 순번(1부터)으로 감소하지 않는다. `aheadCount`는 현재 자신보다 앞선 WAITING 인원만 센다. 이미 입장한 인원은 포함하지 않는다. ADMITTED/종료 상태의 aheadCount는 0이다. 신규 사용자는 앞선 대기자가 먼저 승격된 뒤 남은 용량에 입장한다.
+`POST queue`: 최초 WAITING을 생성하며 HTTP 요청에서 승격하지 않는다. 별도 작업자가 FIFO 순서로 ADMITTED로 바꾼다. 활성 중복 진입은 기존 순번/토큰 유지. EXPIRED/CANCELLED 및 시각상 만료된 ADMITTED 재진입은 새 순번으로 줄 끝에 배치된다. `ticketNumber`는 회차별 누적 발급 순번(1부터)으로 감소하지 않는다. `aheadCount`는 자신보다 앞선 WAITING 인원, `position`은 WAITING일 때 aheadCount+1(그 외 null)이다. 이미 입장한 인원은 포함하지 않는다. ADMITTED/종료 상태의 aheadCount는 0이다. 상태/순번은 한 SELECT의 스냅샷으로 읽는다.
 
 ADMITTED 토큰은 사용자/회차/만료에 귀속되며 기본 10분, 재조회로 연장되지 않는다. 만료는 EXPIRED, 취소는 CANCELLED. `estimatedWaitSeconds=null`: 실제 유입/처리 시간 관측 모델이 없어 정확도를 가장하지 않는다. pollAfterSeconds는 WAITING 등 3초, ADMITTED 30초. 판매 마감 시 남은 WAITING/ADMITTED는 EXPIRED가 된다. 미진입 조회는 404다. 진행률은 총 대기 인원 기준치가 없으므로 제공하지 않으며 프론트는 대기번호와 앞선 인원을 표시한다.
 
-입장 토큰은 좌석 조회/확보/신규 예매 생성에 필수. 프론트 화면 이동이나 fake 토큰으로 우회할 수 없다. 대기 취소는 해당 사용자의 활성 확보도 해제한다. 폴링과 10초 주기 worker가 만료 및 다음 입장을 진행한다. 시뮬레이션·바로 입장 endpoint 자체를 만들지 않았으므로 운영 우회 경로가 없다. dev 시드도 실제 DB 대기열을 사용한다.
+입장 토큰은 좌석 조회/확보/신규 예매 생성에 필수. 프론트 화면 이동이나 fake 토큰으로 우회할 수 없다. 대기 취소는 해당 사용자의 활성 확보도 해제한다. 기본 1초 주기 worker가 만료 및 다음 입장을 진행한다. worker는 WAITING이 있고 유효 입장자가 capacity 미만인 회차, 만료 확보/입장권이 있는 회차, 판매 마감 회차를 찾는다. 회차별 트랜잭션에서 FOR UPDATE SKIP LOCKED로 다른 worker/예매가 점유한 회차를 건너뛰며 다음 tick에 재시도한다. 잠금 후 입장자 수를 재계산하고 회차당 tick/작업자별 최대 20명과 남은 capacity 중 작은 수만 순서대로 승격한다. 여러 worker가 있어도 총 활성 입장 용량은 DB 잠금으로 보호하지만 초당 승격량은 전역 제한이 아니다. 만료 세션 삭제는 별도 60초 작업이다. 작업자가 멈추면 입장 승격도 멈추므로 운영에서 작업자 상태를 모니터링해야 한다. 시뮬레이션·바로 입장 endpoint는 없다.
 
 ## 좌석 동시성과 만료
 
 대기열/좌석 변경 경로는 먼저 performance 행에 SELECT FOR UPDATE를 수행한다. 동일 회차 전체가 직렬화되어 여러 인스턴스에서도 입장 용량, 사용자별 활성 확보 최대 4석, 만료 처리, 취소, 좌석 판매를 일관되게 판단한다. 서로 다른 회차는 독립 진행된다. reserve는 먼저 사용자 행을 잠가 사용자 멱등성 키가 서로 다른 회차에서도 충돌하지 않게 한다. 다른 경로는 사용자 행을 잠그지 않으므로 역순 잠금이 없다. UPDATE는 hold_id/reservation_id가 모두 NULL인 조건을 재검증한다. 하나라도 확보 실패하면 전체 트랜잭션이 rollback되어 부분 확보가 없다.
 
-확보는 기본 5분. 판매·활성 확보 합계는 서버 가격으로만 계산한다. 요청마다 만료 좌석을 정리하며 worker가 기본 10초마다 물리적 참조를 해제한다. 만료 후 확정은 즉시 거부한다. 실패 트랜잭션에서 정리 변경도 rollback될 수 있지만 다음 정상 조회/worker가 정리하며 만료 시각 검증은 항상 적용된다. 입장 만료와 확보 만료는 별개이며 예매 시 둘 다 유효해야 한다. 입장 시간이 얼마 안 남았다면 프론트가 이를 표시해야 한다.
+확보는 기본 5분. 판매·활성 확보 합계는 서버 가격으로만 계산한다. 확보/확정/해제 변경 요청에서 만료 확보를 정리하며 worker도 물리적 참조를 해제한다. 조회는 상태와 expires_at을 조합해 만료 확보를 AVAILABLE로 표시하고 DB는 바꾸지 않는다. 대기열 조회도 worker가 아직 저장 상태를 정리하지 않았어도 만료/마감이면 EXPIRED를 반환하고 토큰을 숨긴다. 만료 후 확정은 즉시 거부한다. 실패 트랜잭션의 정리는 rollback될 수 있지만 다음 쓰기/worker가 처리한다. 좌석 GET은 현재 스냅샷으로 확보를 보장하지 않으며 최종 확보/확정은 잠금 안에서 다시 검증한다. 입장 만료와 확보 만료는 별개이며 예매 시 둘 다 유효해야 한다.
+
+대기·좌석·구역 조회는 Cache-Control: no-store이며 X-Poll-After(초)를 제공한다. 구역 개요는 별도 최소 2초 간격이며 전체 좌석과 모든 구역별 좌석은 같은 사용자·회차의 2초 간격을 공유한다. 구역 ID를 바꾸면서 반복 호출해 제한을 우회할 수 없다. 입장 토큰과 사용자 상태를 공유 HTTP 캐시에 저장하지 않는다. 현재 배치/가격/재고는 DB JOIN으로 실시간 조회하고 캐시를 추가하지 않았다. 고정 배치 캐시는 규모 측정 후 배치 버전·무효화 정책과 함께 도입할 수 있다. V2 마이그레이션은 queue/hold 만료, 재고 hold 참조, 세션 만료 인덱스를 추가한다.
 
 ## 멱등성과 결제 정책
 
@@ -59,4 +67,4 @@ reserve는 필수 Idempotency-Key(사용자 범위, 1~100자)와 holdId를 받�
 
 ## 운영 한계
 
-카탈로그/콘텐츠 검색은 언어 fallback을 일관되게 처리하기 위해 전체 후보를 읽어 메모리에서 필터/정렬한다. 대량 데이터에서는 번역 테이블/DB 검색 인덱스와 SQL 페이지네이션으로 바꿔야 한다. 대기열 성능, 분산 요청 제한, 부하/장애 복구, PG, 계정 프로비저닝, 행사/배치 운영 CRUD, 이미지 업로드는 추가 작업이다. 관리자 콘텐츠 API는 plain text이며 프론트에서 HTML로 주입하지 않는다. Swagger는 prod 기본 비활성, 필요할 때만 신뢰된 환경에서 활성화한다. 기존 dev DB를 운영 DB로 재사용하면 안 된다.
+카탈로그/콘텐츠 검색은 언어 fallback을 일관되게 처리하기 위해 전체 후보를 읽어 메모리에서 필터/정렬한다. 대량 데이터에서는 번역 테이블/DB 검색 인덱스와 SQL 페이지네이션으로 바꿔야 한다. 대기열 성능, 분산 요청 제한, 부하/장애 복구, PG, 관리자 계정 프로비저닝, 행사 수정·삭제/배치 운영 CRUD, 외부 이미지 객체 저장소는 추가 작업이다. 관리자 콘텐츠 API는 plain text이며 프론트에서 HTML로 주입하지 않는다. Swagger는 prod 기본 비활성, 필요할 때만 신뢰된 환경에서 활성화한다. 기존 dev DB를 운영 DB로 재사용하면 안 된다.

@@ -5,6 +5,7 @@ import jakarta.servlet.http.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -19,17 +20,18 @@ import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Configuration
+@EnableMethodSecurity
 public class SecurityConfig {
     @Bean org.springframework.security.core.userdetails.UserDetailsService noFormLogin() {
         return username->{throw new org.springframework.security.core.userdetails.UsernameNotFoundException("Bearer authentication only");};
     }
-    @Bean SecurityFilterChain chain(HttpSecurity http,AuthService auth,ObjectMapper json,
+    @Bean SecurityFilterChain chain(HttpSecurity http,AuthService auth,ObjectMapper json,ReadRequestLimiter reads,
                                     @Value("${app.origins}") String origins) throws Exception {
         var allowed=Arrays.stream(origins.split(",")).map(String::trim).toList();
         var cors=new CorsConfiguration(); cors.setAllowedOrigins(allowed); cors.setAllowCredentials(true);
         cors.setAllowedMethods(List.of("GET","POST","PATCH","DELETE","OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization","Content-Type","X-Admission-Token","Idempotency-Key"));
-        cors.setExposedHeaders(List.of("X-Trace-Id","Retry-After"));
+        cors.setExposedHeaders(List.of("X-Trace-Id","Retry-After","X-Poll-After"));
         var source=new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/**",cors);
         return http.csrf(c->c.disable()).cors(c->c.configurationSource(source))
             .sessionManagement(c->c.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -53,11 +55,22 @@ public class SecurityConfig {
                             var p=auth.authenticate(header.substring(7));
                             SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(p,null,List.of(new SimpleGrantedAuthority("ROLE_"+p.role()))));
                         }
+                        var authentication=SecurityContextHolder.getContext().getAuthentication();
+                        var principal=authentication!=null&&authentication.getPrincipal() instanceof AuthService.Principal p?p:null;
+                        String readPath=r.getMethod().equals("GET")?reads.canonicalPath(r.getServletPath()):null;
+                        if(readPath!=null) {
+                            w.setHeader("Cache-Control","no-store");
+                            w.setHeader("X-Poll-After",Integer.toString(reads.intervalSeconds(readPath)));
+                            if(principal!=null) {
+                                long retry=reads.retryAfter(principal.id(),readPath);
+                                if(retry>0) {w.setHeader("Retry-After",Long.toString(retry));throw new ApiError(429,"RATE_LIMITED","권장 조회 주기 이후 다시 요청하세요.");}
+                            }
+                        }
                         if(r.getRequestURI().startsWith("/api/")) {
                             long minute=System.currentTimeMillis()/60000;
                             if(limits.size()>10000) limits.entrySet().removeIf(e->e.getValue().minute<minute);
                             // Direct peer address only; untrusted forwarded headers are ignored.
-                            String key=r.getRemoteAddr()+(r.getRequestURI().startsWith("/api/v1/auth/")?":auth":":api");
+                            String key=r.getRequestURI().startsWith("/api/v1/auth/")?r.getRemoteAddr()+":auth":(principal==null?r.getRemoteAddr():"user:"+principal.id())+":api";
                             int max=key.endsWith(":auth")?30:240;
                             var b=limits.compute(key,(k,v)->v==null||v.minute!=minute?new Bucket(minute):v);
                             if(b.hits.incrementAndGet()>max) { w.setHeader("Retry-After","60"); throw new ApiError(429,"RATE_LIMITED","요청이 너무 많습니다."); }

@@ -1,0 +1,16 @@
+{
+  "titles": {"ko": "새로운 라이브 콘서트", "en": "New Live Concert", "zh-CN": "全新现场演唱会"},
+  "descriptions": {"ko": "포스터가 포함된 행사 소개입니다."},
+  "category": "CONCERT",
+  "featuredRank": 0,
+  "performances": [{
+    "venueId": 10,
+    "startsAt": "2027-12-01T10:00:00Z",
+    "opensAt": "2026-10-01T00:00:00Z",
+    "closesAt": "2027-11-30T10:00:00Z",
+    "sectionPrices": [
+      {"sectionId": 1000001, "grade": "VIP", "price": 150000},
+      {"sectionId": 1000002, "grade": "R", "price": 110000}
+    ]
+  }]
+}

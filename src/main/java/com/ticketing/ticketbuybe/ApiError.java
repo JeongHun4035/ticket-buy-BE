@@ -20,13 +20,21 @@ public class ApiError extends RuntimeException {
 
 @RestControllerAdvice
 class Errors {
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ResponseEntity<ApiError.Body> tooLarge(Exception e,HttpServletRequest r) {
+        return ResponseEntity.status(413).body(ApiError.body("IMAGE_TOO_LARGE","이미지 최대 5MiB, 전체 요청 최대 6MiB입니다.",r));
+    }
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    ResponseEntity<ApiError.Body> forbidden(Exception e,HttpServletRequest r) {
+        return ResponseEntity.status(403).body(ApiError.body("FORBIDDEN","권한이 없습니다.",r));
+    }
     @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
     ResponseEntity<ApiError.Body> method(Exception e,HttpServletRequest r) {
         return ResponseEntity.status(405).body(ApiError.body("METHOD_NOT_ALLOWED","지원하지 않는 HTTP 메서드입니다.",r));
     }
     @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
     ResponseEntity<ApiError.Body> media(Exception e,HttpServletRequest r) {
-        return ResponseEntity.status(415).body(ApiError.body("UNSUPPORTED_MEDIA_TYPE","application/json을 사용하세요.",r));
+        return ResponseEntity.status(415).body(ApiError.body("UNSUPPORTED_MEDIA_TYPE","API가 지원하는 Content-Type을 사용하세요.",r));
     }
     @ExceptionHandler(ApiError.class)
     ResponseEntity<ApiError.Body> domain(ApiError e, HttpServletRequest r) {
@@ -36,7 +44,9 @@ class Errors {
         org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
         org.springframework.http.converter.HttpMessageNotReadableException.class,
         org.springframework.web.bind.MissingRequestHeaderException.class,
-        org.springframework.web.bind.MissingServletRequestParameterException.class, jakarta.validation.ConstraintViolationException.class, IllegalArgumentException.class})
+        org.springframework.web.bind.MissingServletRequestParameterException.class,
+        org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+        org.springframework.web.multipart.MultipartException.class, jakarta.validation.ConstraintViolationException.class, IllegalArgumentException.class})
     ResponseEntity<ApiError.Body> invalid(Exception e,HttpServletRequest r) {
         return ResponseEntity.badRequest().body(ApiError.body("INVALID_REQUEST","입력값을 확인하세요.",r));
     }

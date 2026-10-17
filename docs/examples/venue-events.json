@@ -1,0 +1,41 @@
+[
+    {
+        "id":  10,
+        "title":  "소극장 연극 축제",
+        "description":  "구역별 좌석 예매 개발 데이터",
+        "category":  "THEATER",
+        "venue":  "소극장 500",
+        "date":  "2026-11-17T18:15:28.626439Z",
+        "price":  110000,
+        "posterUrl":  "http://localhost:8080/posters/studio.svg",
+        "status":  "ON_SALE",
+        "venueId":  10,
+        "venueCapacity":  500
+    },
+    {
+        "id":  20,
+        "title":  "그랜드홀 뮤지컬",
+        "description":  "구역별 좌석 예매 개발 데이터",
+        "category":  "MUSICAL",
+        "venue":  "그랜드홀 5000",
+        "date":  "2026-11-17T18:15:28.707492Z",
+        "price":  80000,
+        "posterUrl":  "http://localhost:8080/posters/grand-hall.svg",
+        "status":  "ON_SALE",
+        "venueId":  20,
+        "venueCapacity":  5000
+    },
+    {
+        "id":  30,
+        "title":  "스타디움 라이브 콘서트",
+        "description":  "구역별 좌석 예매 개발 데이터",
+        "category":  "CONCERT",
+        "venue":  "스타디움 30000",
+        "date":  "2026-11-17T18:15:29.049660Z",
+        "price":  80000,
+        "posterUrl":  "http://localhost:8080/posters/stadium.svg",
+        "status":  "ON_SALE",
+        "venueId":  30,
+        "venueCapacity":  30000
+    }
+]
