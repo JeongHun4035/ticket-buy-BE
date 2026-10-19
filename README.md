@@ -192,20 +192,20 @@ $env:TEST_DB_PASSWORD='replace-with-test-password'
 1. **로그인** — `POST /auth/login`에 `demo` 계정 정보를 전달하고 응답의 `accessToken`을 복사합니다.
 2. **인증 설정** — 상단 **Authorize**에 토큰 값만 입력합니다. `Bearer ` 접두사는 UI가 추가합니다.
 3. **행사 조회** — `GET /users/me`, `GET /events`, `GET /events/1/performances`를 호출합니다.
-4. **대기열 진입** — `POST /performances/101/queue`를 호출합니다. 최초 상태는 `WAITING`입니다.
+4. **대기열 진입** — `POST /performances/101/queue`를 호출합니다. 용량에 여유가 있으면 `ADMITTED`와 입장 토큰을 즉시 받습니다. `WAITING`이면 다음 단계에서 상태를 조회합니다.
 5. **입장 확인** — `GET /performances/101/queue/me`를 `pollAfterSeconds` 주기(기본 3초)로 조회합니다. `ADMITTED` 응답의 `admissionToken`을 복사합니다.
 6. **좌석 조회** — `GET /performances/101/seats`의 `X-Admission-Token` 헤더에 입장 토큰을 입력합니다.
 7. **좌석 확보** — `POST /performances/101/holds`에 같은 입장 헤더와 `{"seatIds":[1,2]}`를 전달합니다. 반환 `id`와 `expiresAt`을 확인합니다.
 8. **예매 확정** — `POST /reservations`에 같은 입장 헤더, `Idempotency-Key: booking-demo-1`, `{"holdId":"반환된 id"}`를 전달합니다.
 9. **결과 확인** — 같은 확정 요청을 반복해 같은 예매를 받는지 확인합니다. `/reservations/me`, 예매 상세·취소를 확인합니다.
 
-빈 개발 환경에서도 작업자가 처리한 후 입장됩니다. `position`은 현재 대기순서, `ticketNumber`는 누적 발급 순번입니다. 다른 계정·회차·만료 토큰이나 이미 확보된 좌석으로 오류 응답도 확인하세요. 사용하지 않는 확보는 DELETE holds로 해제합니다.
+즉시 `ADMITTED` 응답을 받으면 대기 화면 없이 좌석 조회로 이동합니다. `position`은 현재 대기순서, `ticketNumber`는 누적 발급 순번입니다. 다른 계정·회차·만료 토큰이나 이미 확보된 좌석으로 오류 응답도 확인하세요. 사용하지 않는 확보는 DELETE holds로 해제합니다.
 
 인증 갱신에는 브라우저 쿠키를 사용합니다. refresh 후에는 새 `accessToken`으로 Swagger Authorize도 갱신합니다. 쿠키 값은 JavaScript로 읽을 수 없으며 로그아웃하면 세션을 폐기합니다. FAQ·게시글 관리는 `admin` 계정의 Bearer 토큰이 필요합니다.
 
 ## 대기열과 좌석 처리
 
-대기열은 `WAITING`으로 진입한 뒤 작업자가 순서대로 입장시킵니다. 대기 상태·좌석 GET은 회차 행 잠금이나 만료 UPDATE 없이 조회합니다. 좌석 조회는 스냅샷이며 최종 확보·확정은 DB 잠금 안에서 다시 검증합니다.
+회차별 유효 입장자가 `QUEUE_CAPACITY`(기본 50명) 미만이고 앞선 대기자가 없으면 즉시 `ADMITTED`로 입장합니다. 용량이 차거나 앞선 대기자가 있으면 `WAITING`으로 진입한 뒤 작업자가 순서대로 입장시킵니다. 트래픽 기준은 초당 요청 수나 CPU가 아니라 유효 입장 토큰 수입니다. 입장 권한은 기본 600초이며 만료 또는 대기열 퇴장 시 자리가 생깁니다. 예매 확정만으로는 입장 권한이 해제되지 않습니다. 대기 상태·좌석 GET은 회차 행 잠금이나 만료 UPDATE 없이 조회합니다. 좌석 조회는 스냅샷이며 최종 확보·확정은 DB 잠금 안에서 다시 검증합니다.
 
 | 환경변수 | 기본값 | 의미 |
 | --- | --- | --- |
@@ -248,6 +248,7 @@ $env:TEST_DB_PASSWORD='replace-with-test-password'
 
 | 문서 | 내용 |
 | --- | --- |
+| [프로젝트 구조](docs/project-structure.md) | 도메인별 패키지, 공통 코드, 테스트 배치 기준 |
 | [개발 환경 및 VM 실행](docs/setup-and-vm.md) | OpenJDK 21, VS Code 확장, Ubuntu 설치·빌드·systemd 명령어 |
 | [공개 서버 Origin 설정](docs/server-origin.md) | CORS, 공개 URL, 로그인·가입 오류 해결 |
 | [API 계약](docs/api-contract.md) | 요청·응답, 오류 코드, 입력 제약 |

@@ -14,7 +14,7 @@
 | V2→V3 업그레이드 | 기존 좌석/예매 ID와 재고 참조 보존, 구역 간 같은 열·번호 허용, 같은 구역 중복 및 잘못된 구역 재고 FK 거부 |
 | 구역 HTTP/프로필 | 신규 API 401/403/404/200 및 전체/구역 좌석 공유 429 확인, prod+dev 동시 활성화에도 개발 시드 미로딩 |
 | 조회 잠금 분리 | 다른 트랜잭션이 회차 행 잠금을 보유한 상태에서 대기·좌석 조회 완료. 만료 확보는 AVAILABLE 표시하되 DB 참조/상태는 그대로, worker 실행 후 물리적 해제 |
-| 작업자 | 최초 WAITING, GET으로 승격되지 않음. 두 worker 동시 실행에도 capacity 유지·FIFO 승격. 잠긴 회차는 SKIP LOCKED로 대기하지 않음. 마감/만료 처리 및 만료 후 재진입은 줄 끝 배치 |
+| 작업자 | 용량 초과 시 WAITING, GET으로 승격되지 않음. 두 worker 동시 실행에도 capacity 유지·FIFO 승격. 잠긴 회차는 SKIP LOCKED로 대기하지 않음. 마감/만료 처리 및 만료 후 재진입은 줄 끝 배치 |
 | 폴링 제어 | 실제 HTTP 대기·좌석 반복 조회 429 및 Retry-After, Cache-Control: no-store와 X-Poll-After 확인. 대기/좌석 종류별 독립 제한, 선행 0을 넣은 회차 ID로 제한 우회 불가 |
 | 권한 코드 응답 | 일반 사용자 USER·관리자 ADMIN이 로그인/refresh/내 정보에서 반환됨. 가입 응답 USER 고정, ADMIN 지정 시도에도 승격되지 않음 |
 | 회원가입 | 공개 HTTP 가입 201, 한국어 이름/공백 정리, 비밀번호 BCrypt 저장, 입력 오류 400, 중복 409, 가입 후 로그인·내 정보 성공, USER 권한 고정 |
@@ -44,3 +44,22 @@ PostgreSQL/Docker 실행 도구가 없는 환경이므로 PostgreSQL 엔진에�
 층·구역 추가 후에는 전체 22개 테스트와 JAR 빌드를 통과했다. 최종 JAR을 독립 H2 DB/포트 18081에서 실행해 V3 적용과 신규 시드를 확인했다. 행사 10/20/30, 회차 1001/2001/3001에 실제 로그인·자동 대기열 입장 후 구역/구역 좌석 API를 호출했다. 공연장 capacity=500/5000/30000, 층=1/2/3, 구역=2/20/120, 선택 구역 반환 좌석=250, 초기 잔여 수 합=각 capacity를 확인했다. 민감 정보 없는 전체 응답을 `docs/examples`에 저장하고 OpenAPI(총 32개 operation)를 재추출했다. 검증용 서버는 종료했다. PostgreSQL 실제 엔진과 부하 성능은 검증하지 않았다.
 
 이미지 첨부 행사 등록을 추가한 뒤에는 전체 25개 테스트를 통과했다. 실행 JAR/독립 H2 DB/포트 18081에서 관리자 로그인 후 실제 JPEG multipart 등록 201, 신규 행사/회차 ID 100000, 공개 JPEG 이미지 조회 200, 기존 dev 행사 8개 포스터 조회 200을 확인했다. Swagger에서 multipart event는 EventCreate 참조·application/json 인코딩, image는 string/binary 필수 필드임을 확인했다. OpenAPI(총 36개 operation)와 실제 등록 응답 `docs/examples/event-created.json`, 이미지 URL이 포함된 `venue-events.json`을 갱신하고 검증용 서버를 종료했다. 프론트 실제 화면·PostgreSQL 실환경·이미지 대량 트래픽은 검증하지 않았다.
+
+
+## 입장 한도에 따른 대기열 적용 (2026-10-19)
+
+기존의 최초 WAITING 정책을 변경했다. 유효 입장자 수가 QUEUE_CAPACITY 미만이고 앞선 대기자가 없으면 즉시 ADMITTED를 반환한다. 용량 초과 또는 앞선 대기자가 있을 때만 WAITING으로 대기한다. 앞 절의 최초 WAITING 기동 검증은 변경 전 정책의 기록이다.
+
+전체 31 개 테스트 및 bootJar 빌드를 통과했다. 즉시 입장, 동시 진입 시 용량 유지, 초과 요청 대기, 만료된 입장자 제외, 회차별 용량 분리, 만료 후 재진입 시 기존 대기자 우선, HTTP 응답을 검증했다. H2 기반 검증이며 PostgreSQL 실환경 및 실제 집중 트래픽 부하 검증은 수행하지 않았다.
+
+## 좌석 조회 잔여좌석 응답 (2026-10-19)
+
+전체 및 구역 좌석 API에 최상위 availableSeats를 추가했다. 반환된 items의 AVAILABLE 수를 사용하므로 좌석 상태와 같은 스냅샷이며 추가 DB 집계 쿼리는 실행하지 않는다. 기존 total/page/pageSize/items는 유지한다. 유효 확보·예매는 제외하며 만료 확보는 worker 정리 전에도 포함한다.
+
+JDK 21에서 전체 32개 테스트와 bootJar 빌드를 통과했다. 구역 응답의 HTTP 필드, 전체·구역별 수치, 확보·만료·예매·취소에 따른 변경, 만료 조회의 DB 무갱신을 검증했다. PostgreSQL 실환경 부하 테스트는 수행하지 않았다.
+
+## 도메인별 패키지 재구성 (2026-10-19)
+
+인증·예매·카탈로그를 domain 하위로 분리하고 설정·DTO·오류·보안을 global, JDBC 접근을 infrastructure.persistence, 개발 시드를 bootstrap.seed로 이동했다. 예외 핸들러와 스케줄링 설정은 독립 파일로 분리했다. 테스트도 해당 패키지 및 integration으로 이동했다. API 경로·응답 계약과 Flyway 마이그레이션은 유지했다.
+
+JDK 21에서 clean test bootJar를 실행해 전체 32개 테스트와 JAR 빌드를 통과했다. Spring 컴포넌트 탐색, 인증·권한·Origin, 대기열·좌석·예매, 잔여좌석, 행사 이미지, 기존 DB 마이그레이션 회귀 검증이 포함된다. Java 파일 경로와 package 선언 일치 및 README의 로컬 문서 링크도 확인했다. 전체 구조는 [프로젝트 구조](project-structure.md)에 정리했다.

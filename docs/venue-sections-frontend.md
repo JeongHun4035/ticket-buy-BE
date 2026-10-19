@@ -28,8 +28,8 @@ X-Admission-Token: <해당 사용자·회차의 admissionToken>
 | 경로 | 응답 | 용도 |
 | --- | --- | --- |
 | GET /api/v1/performances/{performanceId}/sections | Sections | 공연장·층·구역 위치와 잔여 수 |
-| GET /api/v1/performances/{performanceId}/sections/{sectionId}/seats | Page<Seat> | 선택한 구역의 좌석만 조회 |
-| GET /api/v1/performances/{performanceId}/seats | Page<Seat> | 기존 전체 조회 유지. 대형 공연장에는 구역 API 권장 |
+| GET /api/v1/performances/{performanceId}/sections/{sectionId}/seats | SeatPage | 선택한 구역의 좌석만 조회 |
+| GET /api/v1/performances/{performanceId}/seats | SeatPage | 기존 전체 조회 유지. 대형 공연장에는 구역 API 권장 |
 
 `lang=ko`(기본), `en`, `zh-CN` 지원. 번역이 없으면 ko. 확보/예매 응답의 좌석 위치 표시는 현재 기본 언어 ko이며, 식별은 언어 독립 ID를 사용한다.
 
@@ -60,7 +60,7 @@ X-Admission-Token: <해당 사용자·회차의 admissionToken>
     "grade":"VIP","price":150000,"status":"AVAILABLE",
     "sectionId":"1000001","section":"1구역","floor":"1층","floorId":"10001"
   }],
-  "total":250,"page":1,"pageSize":250
+  "total":250,"page":1,"pageSize":250,"availableSeats":250
 }
 ```
 
@@ -100,3 +100,6 @@ Content-Type: application/json
 기존 공통 오류 `{code,message,details,traceId}`를 사용한다. 400 INVALID_REQUEST(잘못된 ID/lang/헤더), 401 인증 실패, 403 QUEUE_ADMISSION_REQUIRED, 404 NOT_FOUND(다른 공연장/회차의 구역 포함), 409 BOOKING_NOT_OPEN/BOOKING_CLOSED, 429 RATE_LIMITED. 확보는 409 SEAT_CONFLICT/SEAT_LIMIT_EXCEEDED/HOLD_EXPIRED 등 기존 계약을 따른다.
 
 구역 집계는 SQL GROUP BY이며 좌석 객체를 전부 반환하거나 로딩하지 않는다. 구역 재고 조회는 `(performance_id,section_id,seat_id)` 인덱스를 사용하도록 조건을 구성했다. 최종 확보·예매는 기존 회차 잠금/조건부 UPDATE/멱등성 제약을 유지하며 복합 FK로 공연장·구역·좌석·회차 연결도 검증한다. 수만 석 데이터 생성과 기능 테스트는 대규모 트래픽 처리량 검증을 의미하지 않는다. PostgreSQL 실제 실행·실행 계획·부하 검증과 다중 서버 전역 요청 제한은 별도 작업이다.
+
+
+전체/구역 좌석 응답의 최상위 availableSeats는 반환된 items 중 AVAILABLE 좌석 수다. 전체 조회에서는 회차 전체, 구역 조회에서는 선택 구역의 잔여 수를 표시한다. total은 전체 좌석 수로 유지한다. 유효 확보·예매는 제외하고 만료 확보는 포함하며, 조회 시점 참고 값이다.

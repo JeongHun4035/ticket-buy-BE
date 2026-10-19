@@ -80,7 +80,7 @@ sort: RECOMMENDED(추천순위 내림차순/id순), DATE_ASC(대표 회차 시�
 {"state":"ADMITTED","ticketNumber":1,"aheadCount":0,"position":null,"estimatedWaitSeconds":null,"admissionToken":"opaque-admission-token","admissionExpiresAt":"2026-10-18T03:10:00Z","pollAfterSeconds":30}
 ```
 
-ticketNumber는 회차별 누적 발급 순번, aheadCount는 앞선 WAITING 인원(입장자는 제외). position은 WAITING일 때 aheadCount+1, 그 외 null이다. UI에는 position을 '현재 대기순서', ticketNumber를 '발급 번호'로 구분해 표시한다. 최초 진입은 WAITING, 작업자가 기본 1초 주기로 입장 용량 내에서 순서대로 승격한다. GET은 DB 잠금·갱신 없이 상태를 조회하며 승격을 수행하지 않는다. 첫 대기자는 앞선 대기자 0명이어도 입장자 용량이 차면 대기한다. 예상 시간 추정 근거가 없어 null. 진행률은 임의 계산하지 않는다. WAITING → ADMITTED → EXPIRED, 또는 취소 시 CANCELLED. 동일 사용자 활성 재진입은 같은 상태. EXPIRED/CANCELLED 재진입은 새 순번. 토큰은 재조회로 연장되지 않는다. 입장 권한은 해당 사용자·회차에만 유효하다. 미진입 상태 조회는 404. 판매 시작 전/마감 진입은 409.
+ticketNumber는 회차별 누적 발급 순번, aheadCount는 앞선 WAITING 인원(입장자는 제외). position은 WAITING일 때 aheadCount+1, 그 외 null이다. UI에는 position을 '현재 대기순서', ticketNumber를 '발급 번호'로 구분해 표시한다. 유효 입장자 수가 QUEUE_CAPACITY(기본 50) 미만이고 앞선 WAITING이 없으면 즉시 ADMITTED와 admissionToken을 반환한다. 그 외 WAITING이며 작업자가 기본 1초 주기로 용량 내에서 FIFO 승격한다. 프론트는 ADMITTED이면 대기 화면 없이 좌석 선택으로 이동하고 WAITING일 때만 position을 표시한다. ticketNumber는 즉시 입장에도 유지되는 누적 발급 번호다. GET은 DB 잠금·갱신 없이 상태를 조회하며 승격을 수행하지 않는다. 첫 대기자는 앞선 대기자 0명이어도 입장자 용량이 차면 대기한다. 예상 시간 추정 근거가 없어 null. 진행률은 임의 계산하지 않는다. WAITING → ADMITTED → EXPIRED, 또는 취소 시 CANCELLED. 동일 사용자 활성 재진입은 같은 상태. EXPIRED/CANCELLED 재진입은 새 순번. 토큰은 재조회로 연장되지 않는다. 입장 권한은 해당 사용자·회차에만 유효하다. 미진입 상태 조회는 404. 판매 시작 전/마감 진입은 409.
 
 GET queue/me는 사용자·회차별 최소 조회 간격 기본 3초, GET seats는 기본 2초다. 두 경로의 간격 제한은 독립이며 다른 사용자와 공유하지 않는다. 응답은 Cache-Control: no-store, X-Poll-After(초)를 제공한다. 빠른 반복 요청은 429 RATE_LIMITED 및 Retry-After(남은 초)를 반환한다. 프론트는 이 시간 이후 약간의 양수 jitter를 더해 재요청하고, 이전 요청이 완료되기 전에 중복 폴링하지 않는다. 제한은 현재 프로세스 단위이며 다중 인스턴스 전역 제한은 게이트웨이가 필요하다.
 
@@ -91,8 +91,10 @@ GET /performances/{performanceId}/seats: Bearer + `X-Admission-Token` 필수. �
 이 조회는 performance 행을 잠그거나 만료 정리를 수행하지 않는다. worker가 아직 DB 참조를 정리하지 않았더라도 확보 만료 시각이 지났으면 AVAILABLE로 표시한다. 조회 결과는 스냅샷이며 좌석 확보 성공을 보장하지 않는다. 확보·예매 API는 트랜잭션에서 재고와 권한을 다시 검증하므로 조회 후 충돌은 409로 처리한다.
 
 ```json
-{"items":[{"id":"1","row":"A","number":1,"x":1,"y":1,"grade":"VIP","price":150000,"status":"AVAILABLE"}],"total":96,"page":1,"pageSize":96}
+{"items":[{"id":"1","row":"A","number":1,"x":1,"y":1,"grade":"VIP","price":150000,"status":"AVAILABLE"}],"total":96,"page":1,"pageSize":96,"availableSeats":96}
 ```
+
+전체 및 구역 좌석 응답은 기존 items/total/page/pageSize에 availableSeats를 추가한다. total은 조회 범위의 전체 좌석 수, availableSeats는 같은 items에서 AVAILABLE인 잔여좌석 수다. 전체 좌석 API는 회차 전체, 구역 좌석 API는 해당 구역만 집계한다. 유효 HELD와 RESERVED는 제외하며 만료된 확보는 포함한다. 조회 시점 참고 값으로 최종 확보를 보장하지 않는다.
 
 실제 응답은 전체 96석이며 위는 한 좌석만 제시했다. grade VIP/R/S. status AVAILABLE/HELD/RESERVED. 배치는 row/number 및 x/y 좌표로 렌더링한다. 무대는 배치 상단에 표시한다. 임의 개수·등급 배열을 프론트에 고정하지 않는다.
 

@@ -45,7 +45,7 @@ V4는 id_allocator와 event_image(BYTEA)를 추가한다. ID 할당 행 잠금�
 
 PostgreSQL queue_entry를 사용한다. 좌석 DB와 동일 트랜잭션 안에서 최종 입장 검증·확보를 제어하고, 다중 인스턴스에서도 중복 진입을 UNIQUE(performance_id,user_id)로 방지하기 위해 선택했다. Redis 별도 장애/복구·DB 간 원자성 문제가 없다. 대기 상태·좌석 GET은 읽기 전용이며 performance 행 잠금이나 정리 UPDATE를 수행하지 않는다. 변경 요청과 작업자만 회차 잠금을 사용한다. 순번은 인덱스 범위 count로 계산하므로 큰 대기열에서는 조회 비용이 남으며 측정 후 Redis 순위 조회 등을 도입할 수 있다. 현재 3만 명 규모 부하 성능을 보증하는 구현은 아니다.
 
-`POST queue`: 최초 WAITING을 생성하며 HTTP 요청에서 승격하지 않는다. 별도 작업자가 FIFO 순서로 ADMITTED로 바꾼다. 활성 중복 진입은 기존 순번/토큰 유지. EXPIRED/CANCELLED 및 시각상 만료된 ADMITTED 재진입은 새 순번으로 줄 끝에 배치된다. `ticketNumber`는 회차별 누적 발급 순번(1부터)으로 감소하지 않는다. `aheadCount`는 자신보다 앞선 WAITING 인원, `position`은 WAITING일 때 aheadCount+1(그 외 null)이다. 이미 입장한 인원은 포함하지 않는다. ADMITTED/종료 상태의 aheadCount는 0이다. 상태/순번은 한 SELECT의 스냅샷으로 읽는다.
+`POST queue`: 회차 행 잠금 안에서 유효 ADMITTED 수와 앞선 WAITING을 확인한다. QUEUE_CAPACITY 미만이고 앞선 대기자가 없으면 즉시 ADMITTED 및 입장 토큰을 발급한다. 그 외 WAITING을 생성하며 별도 작업자가 FIFO 순서로 ADMITTED로 바꾼다. 만료된 ADMITTED는 즉시 입장 용량 계산에서 제외한다. 기준은 RPS가 아닌 회차별 유효 입장자 수이며 예매 확정만으로 입장 권한을 해제하지 않는다. 활성 중복 진입은 기존 순번/토큰 유지. EXPIRED/CANCELLED 및 시각상 만료된 ADMITTED 재진입은 새 순번으로 줄 끝에 배치된다. `ticketNumber`는 회차별 누적 발급 순번(1부터)으로 감소하지 않는다. `aheadCount`는 자신보다 앞선 WAITING 인원, `position`은 WAITING일 때 aheadCount+1(그 외 null)이다. 이미 입장한 인원은 포함하지 않는다. ADMITTED/종료 상태의 aheadCount는 0이다. 상태/순번은 한 SELECT의 스냅샷으로 읽는다.
 
 ADMITTED 토큰은 사용자/회차/만료에 귀속되며 기본 10분, 재조회로 연장되지 않는다. 만료는 EXPIRED, 취소는 CANCELLED. `estimatedWaitSeconds=null`: 실제 유입/처리 시간 관측 모델이 없어 정확도를 가장하지 않는다. pollAfterSeconds는 WAITING 등 3초, ADMITTED 30초. 판매 마감 시 남은 WAITING/ADMITTED는 EXPIRED가 된다. 미진입 조회는 404다. 진행률은 총 대기 인원 기준치가 없으므로 제공하지 않으며 프론트는 대기번호와 앞선 인원을 표시한다.
 
@@ -68,3 +68,8 @@ reserve는 필수 Idempotency-Key(사용자 범위, 1~100자)와 holdId를 받�
 ## 운영 한계
 
 카탈로그/콘텐츠 검색은 언어 fallback을 일관되게 처리하기 위해 전체 후보를 읽어 메모리에서 필터/정렬한다. 대량 데이터에서는 번역 테이블/DB 검색 인덱스와 SQL 페이지네이션으로 바꿔야 한다. 대기열 성능, 분산 요청 제한, 부하/장애 복구, PG, 관리자 계정 프로비저닝, 행사 수정·삭제/배치 운영 CRUD, 외부 이미지 객체 저장소는 추가 작업이다. 관리자 콘텐츠 API는 plain text이며 프론트에서 HTML로 주입하지 않는다. Swagger는 prod 기본 비활성, 필요할 때만 신뢰된 환경에서 활성화한다. 기존 dev DB를 운영 DB로 재사용하면 안 된다.
+
+
+## 소스 패키지 구조
+
+소스는 domain(auth/booking/catalog), global(config/dto/error/security), infrastructure/persistence, bootstrap/seed로 분리했다. 공통 예외 처리와 스케줄링 설정도 독립 파일로 관리한다. 전체 디렉터리와 배치 기준은 [프로젝트 구조](project-structure.md)를 참고한다. API 경로·JSON 필드·DB 마이그레이션 버전은 이 구조 변경으로 바뀌지 않는다.
