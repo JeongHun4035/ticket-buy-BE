@@ -4,7 +4,11 @@
 
 ## 로컬 실행
 
-Java 21이 필요하다. 프로젝트 루트 PowerShell에서:
+**OpenJDK 21(JDK)**이 필요하다. 다른 버전이 기본으로 선택되어 있다면 `JAVA_HOME`, `PATH`, IDE의 프로젝트 JDK를 확인한다. VS Code 개발 환경에는 **Extension Pack for Java**와 **Spring Boot Extension Pack**을 설치한다. 확장 프로그램은 편집·실행을 돕는 IDE 도구이며 VM에서 JAR만 실행할 때는 필요하지 않다.
+
+설치와 버전 확인, VS Code/Remote SSH 설정, Ubuntu VM의 빌드·실행·운영 서비스 명령어는 [개발 환경 및 VM 실행 가이드](docs/setup-and-vm.md)에 정리했다.
+
+프로젝트 루트 PowerShell에서:
 
 ```powershell
 .\gradlew.bat bootRun
